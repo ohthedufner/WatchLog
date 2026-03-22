@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m json.tooln)",
+      "Bash(rm -f _test_watchlog.db)",
+      "Bash(python build_watchlog_db.py --db _test_watchlog.db --channels _test_channels.txt --videos _test_videos.txt --mb-limit 3)",
+      "Bash(py:*)",
+      "Bash(ls \"C:\\\\Users\\\\dufner\\\\Projects\\\\WatchLog\"/*.txt)",
+      "Bash(ls \"C:\\\\Users\\\\dufner\\\\Projects\\\\WatchLog\\\\html_out/\"*.txt)"
+    ]
+  }
+}

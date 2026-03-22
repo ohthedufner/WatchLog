@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WATCHLOG — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#05050a; --bg2:#08080f; --bg3:#0d0d18;
+  --surface:#0f0f1e; --surface2:#141428; --border:#1a1a35;
+  --c1:#ff2d78; --c2:#00e5ff; --c3:#aaff00; --c4:#ff6b00; --c5:#bf5fff;
+  --text:#e8e8f0; --text2:#8888aa; --text3:#4a4a6a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.08) 2px,rgba(0,0,0,.08) 4px);pointer-events:none;z-index:9999}
+body::after{content:'';position:fixed;inset:0;background:radial-gradient(ellipse 60% 40% at 20% 0%,rgba(255,45,120,.07) 0%,transparent 60%),radial-gradient(ellipse 50% 30% at 80% 100%,rgba(0,229,255,.06) 0%,transparent 60%);pointer-events:none;z-index:0}
+#app{position:relative;z-index:1}
+
+nav{position:sticky;top:0;z-index:100;background:rgba(5,5,10,.93);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:0 1.25rem;display:flex;align-items:center;gap:.4rem;height:56px}
+.logo{font-family:'Orbitron',monospace;font-weight:900;font-size:1rem;letter-spacing:.15em;background:linear-gradient(90deg,var(--c1),var(--c2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;cursor:pointer;text-decoration:none;flex-shrink:0;margin-right:.4rem}
+.logo-sub{font-family:'Space Mono',monospace;font-size:.6rem;letter-spacing:.2em;color:var(--c4);text-transform:uppercase;margin-left:.1rem}
+.nav-link{font-family:'Space Mono',monospace;font-size:.65rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text2);padding:.3rem .55rem;border-radius:4px;cursor:pointer;transition:all .2s;border:1px solid transparent;white-space:nowrap;text-decoration:none}
+.nav-link:hover{color:var(--text);border-color:var(--border);background:var(--surface)}
+
+.page{padding:2rem;max-width:1400px;margin:0 auto}
+.section-label{font-family:'Space Mono',monospace;font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;color:var(--text3);margin-bottom:.35rem}
+.section-title{font-family:'Orbitron',monospace;font-weight:700;font-size:1.5rem;letter-spacing:.04em;margin-bottom:1.5rem}
+
+/* STAT CARDS */
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:2rem}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1.1rem 1.25rem;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.stat-card:nth-child(1)::before{background:linear-gradient(90deg,var(--c2),transparent)}
+.stat-card:nth-child(2)::before{background:linear-gradient(90deg,var(--c1),transparent)}
+.stat-card:nth-child(3)::before{background:linear-gradient(90deg,var(--c3),transparent)}
+.stat-card:nth-child(4)::before{background:linear-gradient(90deg,var(--c5),transparent)}
+.stat-num{font-family:'Orbitron',monospace;font-size:1.6rem;font-weight:900;line-height:1;margin-bottom:.2rem}
+.stat-card:nth-child(1) .stat-num{color:var(--c2)}
+.stat-card:nth-child(2) .stat-num{color:var(--c1)}
+.stat-card:nth-child(3) .stat-num{color:var(--c3)}
+.stat-card:nth-child(4) .stat-num{color:var(--c5)}
+.stat-label{font-family:'Space Mono',monospace;font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text2)}
+.stat-sub{font-family:'Space Mono',monospace;font-size:.58rem;color:var(--text3);margin-top:.3rem}
+
+/* PANEL */
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:1.5rem}
+.panel-header{padding:.85rem 1.25rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.panel-title{font-family:'Space Mono',monospace;font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text2)}
+
+/* MB ENRICHMENT LAYOUT */
+.mb-layout{display:grid;grid-template-columns:1fr 340px;gap:1.5rem;align-items:start}
+@media(max-width:900px){.mb-layout{grid-template-columns:1fr}}
+
+/* CHANNEL TABLE */
+.ch-controls{padding:.85rem 1.1rem;border-bottom:1px solid var(--border);display:flex;gap:.6rem;align-items:center}
+.ch-search{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'Space Mono',monospace;font-size:.7rem;padding:.4rem .7rem;outline:none;transition:border-color .2s}
+.ch-search:focus{border-color:rgba(0,229,255,.4)}
+.ch-filter{font-family:'Space Mono',monospace;font-size:.65rem;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text2);padding:.4rem .6rem;cursor:pointer;outline:none}
+.ch-filter:focus{border-color:rgba(0,229,255,.3)}
+.ch-count{font-family:'Space Mono',monospace;font-size:.62rem;color:var(--text3);white-space:nowrap}
+
+.ch-table{width:100%;border-collapse:collapse}
+.ch-table th{font-family:'Space Mono',monospace;font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);padding:.6rem 1rem;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;cursor:pointer;user-select:none}
+.ch-table th:hover{color:var(--text2)}
+.ch-table th.sort-asc::after{content:' ▲'}
+.ch-table th.sort-desc::after{content:' ▼'}
+.ch-table td{padding:.55rem 1rem;border-bottom:1px solid rgba(26,26,53,.6);font-size:.82rem;vertical-align:middle}
+.ch-table tr:last-child td{border-bottom:none}
+.ch-table tr.ch-row{cursor:pointer;transition:background .12s}
+.ch-table tr.ch-row:hover{background:var(--surface2)}
+.ch-table tr.ch-row.selected{background:rgba(0,229,255,.07);outline:1px solid rgba(0,229,255,.25)}
+.ch-name{font-weight:500;color:var(--text)}
+.ch-name small{display:block;font-family:'Space Mono',monospace;font-size:.58rem;color:var(--text3);margin-top:.15rem;word-break:break-all}
+.ch-plays{font-family:'Space Mono',monospace;font-size:.72rem;color:var(--text2);text-align:right}
+.ch-pending{font-family:'Orbitron',monospace;font-size:.75rem;font-weight:700;text-align:right}
+.ch-pending.has-pending{color:var(--c4)}
+.ch-pending.no-pending{color:var(--text3)}
+.ch-est{font-family:'Space Mono',monospace;font-size:.68rem;color:var(--text2);text-align:right;white-space:nowrap}
+.mb-badge{font-family:'Space Mono',monospace;font-size:.58rem;padding:.15rem .45rem;border-radius:3px;white-space:nowrap}
+.mb-badge.accepted{background:rgba(170,255,0,.12);color:var(--c3);border:1px solid rgba(170,255,0,.2)}
+.mb-badge.review{background:rgba(255,107,0,.12);color:var(--c4);border:1px solid rgba(255,107,0,.2)}
+.mb-badge.no_match{background:rgba(136,136,170,.08);color:var(--text3);border:1px solid var(--border)}
+.mb-badge.pending{background:rgba(0,229,255,.08);color:var(--c2);border:1px solid rgba(0,229,255,.15)}
+
+.ch-scroll{max-height:560px;overflow-y:auto}
+.ch-scroll::-webkit-scrollbar{width:5px}
+.ch-scroll::-webkit-scrollbar-track{background:var(--bg2)}
+.ch-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+.pagination{padding:.7rem 1rem;border-top:1px solid var(--border);display:flex;align-items:center;gap:.5rem;font-family:'Space Mono',monospace;font-size:.65rem;color:var(--text3)}
+.page-btn{background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text2);padding:.25rem .55rem;cursor:pointer;font-family:'Space Mono',monospace;font-size:.65rem;transition:all .15s}
+.page-btn:hover:not(:disabled){border-color:rgba(0,229,255,.3);color:var(--c2)}
+.page-btn:disabled{opacity:.3;cursor:default}
+
+/* SELECTION SIDEBAR */
+.sidebar{position:sticky;top:72px}
+.sidebar-panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:1rem}
+.sidebar-header{padding:.85rem 1.1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.sidebar-title{font-family:'Space Mono',monospace;font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text2)}
+.sidebar-clear{font-family:'Space Mono',monospace;font-size:.6rem;color:var(--c1);background:none;border:none;cursor:pointer;padding:0}
+.sidebar-clear:hover{text-decoration:underline}
+.selected-list{list-style:none;max-height:200px;overflow-y:auto}
+.selected-item{display:flex;align-items:center;justify-content:space-between;padding:.5rem .9rem;border-bottom:1px solid rgba(26,26,53,.6);gap:.5rem}
+.selected-item:last-child{border-bottom:none}
+.selected-name{font-size:.8rem;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.selected-vids{font-family:'Space Mono',monospace;font-size:.65rem;color:var(--text3);white-space:nowrap}
+.selected-remove{background:none;border:none;color:var(--text3);cursor:pointer;font-size:.85rem;padding:0 0 0 .4rem;line-height:1;flex-shrink:0}
+.selected-remove:hover{color:var(--c1)}
+.empty-msg{padding:1rem;font-family:'Space Mono',monospace;font-size:.65rem;color:var(--text3);text-align:center}
+
+.estimate-box{padding:1rem 1.1rem;border-top:1px solid var(--border)}
+.est-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.4rem}
+.est-label{font-family:'Space Mono',monospace;font-size:.62rem;color:var(--text3);text-transform:uppercase;letter-spacing:.08em}
+.est-val{font-family:'Orbitron',monospace;font-size:1rem;font-weight:700;color:var(--c2)}
+.est-val.zero{color:var(--text3)}
+
+.cmd-box{padding:1rem 1.1rem;border-top:1px solid var(--border)}
+.cmd-label{font-family:'Space Mono',monospace;font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:.5rem}
+.cmd-code{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:.75rem .9rem;font-family:'Space Mono',monospace;font-size:.65rem;color:var(--c3);word-break:break-all;line-height:1.6;min-height:3rem;position:relative}
+.cmd-code.empty{color:var(--text3);font-style:italic}
+.cmd-copy{margin-top:.5rem;width:100%;background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.2);border-radius:6px;color:var(--c2);font-family:'Space Mono',monospace;font-size:.65rem;padding:.45rem;cursor:pointer;transition:all .15s;letter-spacing:.06em}
+.cmd-copy:hover:not(:disabled){background:rgba(0,229,255,.15)}
+.cmd-copy:disabled{opacity:.3;cursor:default}
+.cmd-copy.copied{background:rgba(170,255,0,.1);border-color:rgba(170,255,0,.25);color:var(--c3)}
+
+.note{font-family:'Space Mono',monospace;font-size:.6rem;color:var(--text3);line-height:1.6;padding:.75rem 1.1rem;border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+<div id="app">
+
+<nav>
+  <a class="logo" href="index.html">WATCHLOG</a>
+  <span class="logo-sub">/ ADMIN</span>
+  <a class="nav-link" href="index.html">← Site</a>
+</nav>
+
+<div class="page">
+  <div class="section-label">Administration</div>
+  <div class="section-title">WatchLog Admin</div>
+
+  <!-- STAT CARDS -->
+  <div class="stat-grid" id="statGrid">
+    <div class="stat-card"><div class="stat-num" id="sCh">—</div><div class="stat-label">Channels</div><div class="stat-sub" id="sChSub">— music</div></div>
+    <div class="stat-card"><div class="stat-num" id="sVid">—</div><div class="stat-label">Videos</div><div class="stat-sub" id="sVidSub">— music</div></div>
+    <div class="stat-card"><div class="stat-num" id="sSong">—</div><div class="stat-label">Songs</div><div class="stat-sub" id="sSongSub">— with MB ID</div></div>
+    <div class="stat-card"><div class="stat-num" id="sMB">—</div><div class="stat-label">MB Matched</div><div class="stat-sub" id="sMBSub">channels accepted</div></div>
+  </div>
+
+  <!-- MB ENRICHMENT -->
+  <div class="section-label">MusicBrainz Enrichment</div>
+  <div style="font-family:'Orbitron',monospace;font-weight:700;font-size:1.1rem;letter-spacing:.04em;margin-bottom:1rem;color:var(--text2)">Channel Selector</div>
+
+  <div class="mb-layout">
+
+    <!-- LEFT: CHANNEL TABLE -->
+    <div>
+      <div class="panel">
+        <div class="ch-controls">
+          <input class="ch-search" id="chSearch" type="text" placeholder="Search channels..." oninput="filterChannels()">
+          <select class="ch-filter" id="mbFilter" onchange="filterChannels()">
+            <option value="all">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="accepted">Accepted</option>
+            <option value="review">Review</option>
+            <option value="no_match">No match</option>
+          </select>
+          <span class="ch-count" id="chCount">— channels</span>
+        </div>
+        <div class="ch-scroll">
+          <table class="ch-table">
+            <thead>
+              <tr>
+                <th onclick="sortBy('name')" id="th-name">Channel</th>
+                <th onclick="sortBy('plays')" id="th-plays" style="text-align:right">Plays</th>
+                <th onclick="sortBy('pending')" id="th-pending" style="text-align:right">Pending</th>
+                <th onclick="sortBy('est')" id="th-est" style="text-align:right">Est.</th>
+                <th id="th-mb">MB Status</th>
+              </tr>
+            </thead>
+            <tbody id="chBody"></tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <button class="page-btn" id="btnPrev" onclick="changePage(-1)">◀ Prev</button>
+          <span id="pageInfo">—</span>
+          <button class="page-btn" id="btnNext" onclick="changePage(1)">Next ▶</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: SELECTION + ESTIMATE -->
+    <div class="sidebar">
+      <div class="sidebar-panel">
+        <div class="sidebar-header">
+          <span class="sidebar-title">Selected Channels</span>
+          <button class="sidebar-clear" onclick="clearSelection()">Clear all</button>
+        </div>
+        <ul class="selected-list" id="selectedList">
+          <li class="empty-msg">No channels selected.<br>Click a row to add.</li>
+        </ul>
+        <div class="estimate-box">
+          <div class="est-row">
+            <span class="est-label">Pending Videos</span>
+            <span class="est-val zero" id="estVids">0</span>
+          </div>
+          <div class="est-row">
+            <span class="est-label">Est. Time</span>
+            <span class="est-val zero" id="estTime">—</span>
+          </div>
+        </div>
+        <div class="cmd-box">
+          <div class="cmd-label">Command</div>
+          <div class="cmd-code empty" id="cmdCode">Select channels above to generate command.</div>
+          <button class="cmd-copy" id="cmdCopy" onclick="copyCmd()" disabled>Copy to clipboard</button>
+        </div>
+        <div class="note">
+          Rate: ~1.1 sec / video + ~1.1 sec / channel artist lookup.<br>
+          Run from the WatchLog project directory.
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /page -->
+</div><!-- /app -->
+
+<script>
+const MB_RATE = 1.1; // seconds per request
+const PAGE_SIZE = 50;
+
+let allChannels = [];
+let filtered    = [];
+let selected    = new Map(); // url -> channel obj
+let currentPage = 0;
+let sortKey     = 'plays';
+let sortDir     = -1; // -1 = desc
+
+async function init() {
+  const resp = await fetch('admin_data.json');
+  const data = await resp.json();
+
+  // Stats
+  const s = data.stats;
+  document.getElementById('sCh').textContent    = s.channels_total.toLocaleString();
+  document.getElementById('sChSub').textContent = s.channels_music.toLocaleString() + ' music';
+  document.getElementById('sVid').textContent   = s.videos_total.toLocaleString();
+  document.getElementById('sVidSub').textContent= s.videos_music.toLocaleString() + ' music';
+  document.getElementById('sSong').textContent  = s.songs_total.toLocaleString();
+  document.getElementById('sSongSub').textContent = s.songs_mb.toLocaleString() + ' with MB ID';
+  document.getElementById('sMB').textContent    = s.channels_mb.toLocaleString();
+
+  allChannels = data.channels;
+  filterChannels();
+}
+
+function filterChannels() {
+  const q      = document.getElementById('chSearch').value.toLowerCase().trim();
+  const status = document.getElementById('mbFilter').value;
+  filtered = allChannels.filter(c => {
+    const matchQ = !q || c.name.toLowerCase().includes(q) || c.url.toLowerCase().includes(q);
+    const matchS = status === 'all' || c.mb_status === status;
+    return matchQ && matchS;
+  });
+  currentPage = 0;
+  sortFiltered();
+  renderTable();
+}
+
+function sortBy(key) {
+  if (sortKey === key) {
+    sortDir *= -1;
+  } else {
+    sortKey = key;
+    sortDir = key === 'name' ? 1 : -1;
+  }
+  sortFiltered();
+  renderTable();
+}
+
+function sortFiltered() {
+  const keyMap = {plays:'plays', name:'name', pending:'pending_videos', est:'pending_videos'};
+  const k = keyMap[sortKey] || 'plays';
+  filtered.sort((a,b) => {
+    let av = a[k], bv = b[k];
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    if (av < bv) return -sortDir;
+    if (av > bv) return  sortDir;
+    return 0;
+  });
+  // Update sort indicators
+  ['name','plays','pending','est'].forEach(k => {
+    const th = document.getElementById('th-' + k);
+    if (!th) return;
+    th.className = sortKey === k ? (sortDir === 1 ? 'sort-asc' : 'sort-desc') : '';
+  });
+}
+
+function renderTable() {
+  const start = currentPage * PAGE_SIZE;
+  const page  = filtered.slice(start, start + PAGE_SIZE);
+  const tbody = document.getElementById('chBody');
+
+  tbody.innerHTML = page.map(ch => {
+    const sel    = selected.has(ch.url);
+    const pend   = ch.pending_videos;
+    const estSec = Math.round((pend + 1) * MB_RATE);
+    const estStr = estSec < 60 ? estSec + 's' : Math.ceil(estSec/60) + 'm ' + (estSec % 60) + 's';
+    return `<tr class="ch-row${sel ? ' selected' : ''}" onclick="toggleChannel(${JSON.stringify(ch.url)})">
+      <td><div class="ch-name">${esc(ch.name)}<small>${esc(ch.url)}</small></div></td>
+      <td class="ch-plays">${ch.plays.toLocaleString()}</td>
+      <td class="ch-pending ${pend > 0 ? 'has-pending' : 'no-pending'}">${pend}</td>
+      <td class="ch-est">${pend > 0 ? estStr : '—'}</td>
+      <td><span class="mb-badge ${ch.mb_status}">${ch.mb_status}</span></td>
+    </tr>`;
+  }).join('');
+
+  const total = filtered.length;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  document.getElementById('pageInfo').textContent =
+    `Page ${currentPage+1} of ${pages} (${total.toLocaleString()} channels)`;
+  document.getElementById('btnPrev').disabled = currentPage === 0;
+  document.getElementById('btnNext').disabled = currentPage >= pages - 1;
+  document.getElementById('chCount').textContent = total.toLocaleString() + ' channels';
+}
+
+function changePage(dir) {
+  const pages = Math.ceil(filtered.length / PAGE_SIZE);
+  currentPage = Math.max(0, Math.min(pages-1, currentPage + dir));
+  renderTable();
+}
+
+function toggleChannel(url) {
+  const ch = allChannels.find(c => c.url === url);
+  if (!ch) return;
+  if (selected.has(url)) {
+    selected.delete(url);
+  } else {
+    selected.set(url, ch);
+  }
+  renderTable();
+  renderSidebar();
+}
+
+function clearSelection() {
+  selected.clear();
+  renderTable();
+  renderSidebar();
+}
+
+function renderSidebar() {
+  const list = document.getElementById('selectedList');
+  if (selected.size === 0) {
+    list.innerHTML = '<li class="empty-msg">No channels selected.<br>Click a row to add.</li>';
+    document.getElementById('estVids').textContent = '0';
+    document.getElementById('estVids').className = 'est-val zero';
+    document.getElementById('estTime').textContent = '—';
+    document.getElementById('estTime').className = 'est-val zero';
+    document.getElementById('cmdCode').textContent = 'Select channels above to generate command.';
+    document.getElementById('cmdCode').className = 'cmd-code empty';
+    document.getElementById('cmdCopy').disabled = true;
+    return;
+  }
+
+  let totalPending = 0;
+  const items = [];
+  selected.forEach(ch => {
+    totalPending += ch.pending_videos;
+    items.push(`<li class="selected-item">
+      <span class="selected-name" title="${esc(ch.url)}">${esc(ch.name)}</span>
+      <span class="selected-vids">${ch.pending_videos} pending</span>
+      <button class="selected-remove" onclick="event.stopPropagation();toggleChannel(${JSON.stringify(ch.url)})" title="Remove">✕</button>
+    </li>`);
+  });
+  list.innerHTML = items.join('');
+
+  // Estimate: 1 artist lookup per channel + 1 per pending video
+  const totalSec = Math.round((totalPending + selected.size) * MB_RATE);
+  const timeStr  = totalSec < 60
+    ? totalSec + ' sec'
+    : Math.floor(totalSec/60) + ' min ' + (totalSec % 60) + ' sec';
+
+  document.getElementById('estVids').textContent = totalPending.toLocaleString();
+  document.getElementById('estVids').className = 'est-val' + (totalPending > 0 ? '' : ' zero');
+  document.getElementById('estTime').textContent = timeStr;
+  document.getElementById('estTime').className = 'est-val' + (totalPending > 0 ? '' : ' zero');
+
+  // Build command
+  const urls = [...selected.keys()].map(u => `  ${u}`).join(' \\\n');
+  const cmd = `py build_watchlog_db.py \\\n  --mb-channel \\\n${urls}`;
+  document.getElementById('cmdCode').textContent = cmd;
+  document.getElementById('cmdCode').className = 'cmd-code';
+  document.getElementById('cmdCopy').disabled = false;
+}
+
+function copyCmd() {
+  const urls = [...selected.keys()].join(' ');
+  const cmd = `py build_watchlog_db.py --mb-channel ${urls}`;
+  navigator.clipboard.writeText(cmd).then(() => {
+    const btn = document.getElementById('cmdCopy');
+    btn.textContent = 'Copied!';
+    btn.className = 'cmd-copy copied';
+    setTimeout(() => {
+      btn.textContent = 'Copy to clipboard';
+      btn.className = 'cmd-copy';
+    }, 2000);
+  });
+}
+
+function esc(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+init();
+</script>
+</body>
+</html>
