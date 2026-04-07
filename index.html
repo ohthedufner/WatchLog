@@ -432,7 +432,7 @@ let curSong   = null;
 // PLAYER MODE
 // ================================================================
 let playerMode = 'embed';   // 'embed' | 'youtube'
-const PLAYER_URL = window.location.origin + '/player.html';
+const PLAYER_URL = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/') + 'player.html';
 let playerTab = null;
 
 function setMode(mode) {
