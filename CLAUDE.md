@@ -33,43 +33,59 @@ It will be distributed as a standalone tool for others to use with their own dat
 
 ---
 
-## Current Status (as of 2026-03-19)
+## Database Field Naming Convention
 
-**What exists and works:**
-- `index.html` — Full working SPA: home, artists, songs, channels, search, artist/song/channel detail pages. Player mode toggle (Embed vs YouTube). MusicBrainz data displayed throughout. ~950 lines (all CSS + JS inline).
+**Every field name begins with a two-letter prefix that identifies its source database.**
+
+| Prefix | Source |
+|--------|--------|
+| `wh_`  | Google Takeout `watch-history.json` |
+| `dj_`  | Aggregated display data (`data.json`) |
+| `ad_`  | Admin data (`admin_data.json`) |
+| `mb_`  | MusicBrainz external API |
+| `wl_`  | WatchLog system — derived or user-editable fields |
+
+**User editing rule:** A user never edits source data directly. When a field from an outside source needs to be editable, a `wl_` field is created in our system, pre-populated with a copy of the original. The original appears read-only adjacent to the editable field for reference.
+
+---
+
+## Current Status (as of 2026-04-07)
+
+### What exists and works
+
+- `index.html` — Full working SPA: home, artists, songs, channels, search, artist/song/channel/song-detail pages. Player mode toggle. See Also section on artist detail. ~1,100 lines (all CSS + JS inline).
 - `player.html` — YouTube IFrame player with queue and autoplay.
-- `preprocess.py` — Processes Google Takeout JSON → 4 pipe-delimited output files. Includes append/merge and overlap detection.
-- `build_watchlog_db.py` — Builds `watchlog.db` (SQLite) from preprocess.py output. Runs title cleaning, MusicBrainz artist + recording enrichment, builds songs table. All results cached in DB.
-- `build_data_json.py` — Converts preprocess.py output (+ optional watchlog.db) → `data.json` for the site. Includes songs array and MusicBrainz fields.
-- `data.json` — Pre-built data payload (old schema, ~465K tokens). **Needs to be regenerated** after running the pipeline on current data.
-- `Gopogle_Takeout/data_structure.txt` — Well-documented analysis of the full takeout schema.
-- One new takeout zip is present and ready to process: `takeout-20260316T021540Z-3-001.zip`
+- `admin.html` — MusicBrainz channel selector: filterable/sortable table of 2,007 music channels, time estimator, command generator.
+- `preprocess.py` — Processes Google Takeout (JSON or HTML format) → pipe-delimited flat files. Auto-detects format by extension.
+- `build_watchlog_db.py` — Builds `watchlog.db` from preprocess output. Title cleaning, MB artist + recording enrichment, songs table. All results cached.
+- `build_wl_db.py` — Builds `wl.db` (presentation database) from JSON sources + `watchlog.db`. Pipeline tables are dropped and recreated; user tables (`wl_artist_links`, future curator tables) are preserved with `CREATE TABLE IF NOT EXISTS`.
+- `build_data_json.py` — Reads **only from `wl.db`** and writes `data.json` + `admin_data.json`. No pipe files or watchlog.db dependency.
+- `server.py` — Flask server for editing sessions. Serves static files + REST API for writing to `wl.db`. Run this instead of a static server when editing data.
 
-**Remaining critical gaps:**
-- `preprocess.py` has not been run on the new takeout zip — `name_file.txt`, `name_title_file.txt` do not yet exist
-- Without those files, `build_watchlog_db.py` and `build_data_json.py` cannot run
-- `data.json` is still the old hand-built version with old schema (no songs, no MB fields)
-- No `validate_input_files.py`
-- No commit/rollback workflow or run log for `data.json`
-- No rules template file — title cleaning rules are still hardcoded in `build_watchlog_db.py`
-- No admin or settings pages
-- No Docker setup
-- All CSS and JS are still inline in `index.html` (not yet split to separate files)
+### Current data volumes
+
+| | |
+|---|---|
+| Watch events (`wh_events`) | 7,300 |
+| Music channels (`ad_channels`) | 2,007 |
+| Music videos (`wl_videos`) | 5,540 |
+| Songs (`wl_songs`) | 4,989 |
+| MB matched channels | 2 (Gorillaz, accepted=100) |
+| MB matched songs | 0 — recording enrichment not yet run |
 
 ---
 
 ## Environment
 
-- **Dev OS**: Windows 11 (with WSL installed)
-- **Python**: 3.14.3 — only stdlib available (`sqlite3`, `urllib`, `json`, `re`). No `requests` or `musicbrainzngs`.
-- **Serving (current)**: RebexTinyWebServer (Windows-only — not Docker-compatible)
-- **Serving (Docker target)**: Python `http.server` or similar lightweight static server
-- **Runtime dependencies**: Python 3 (scripts), internet access (Google Fonts CDN, YouTube IFrame API, YouTube thumbnails)
+- **Dev OS**: Windows 11
+- **Python**: 3.14 — stdlib + `flask` (installed). No `requests` or `musicbrainzngs`.
+- **Serving (editing)**: `python server.py` — Flask on port 8000
+- **Serving (view-only)**: `python -m http.server 8000` — static files only
+- **Docker migration**: Planned. All code is Docker-compatible. `server.py` will be the Docker entry point.
 - **No JS frameworks** — pure HTML/CSS/JS, static files only
-- **Docker migration**: Planned. All code is Docker-compatible except TinyWebServer.
 - **Claude Code** for all development
 
-### External CDN Dependencies (require internet in Docker container)
+### External CDN Dependencies (require internet)
 - `fonts.googleapis.com` — Orbitron, Space Mono, DM Sans
 - `www.youtube.com/iframe_api` — player.html
 - `img.youtube.com/vi/{id}/mqdefault.jpg` — thumbnails (fetched dynamically)
@@ -77,239 +93,203 @@ It will be distributed as a standalone tool for others to use with their own dat
 
 ---
 
-## Actual File Structure (as of 2026-03-19)
+## File Structure (as of 2026-04-07)
 
 ```
 WatchLog/
-├── index.html                  ← Main SPA viewer (all CSS + JS inline, ~950 lines)
+├── index.html                  ← Main SPA viewer (CSS + JS inline)
 ├── player.html                 ← YouTube IFrame player with queue
-├── preprocess.py               ← Takeout JSON → flat text files
-├── build_watchlog_db.py        ← Flat text + MB lookup → watchlog.db (SQLite)
-├── build_data_json.py          ← Flat text + watchlog.db → data.json (bridge script)
-├── data.json                   ← Runtime data payload — OLD SCHEMA, needs regeneration
-├── WatchLog.bat                ← Launches TinyWebServer
+├── admin.html                  ← MusicBrainz channel selector admin tool
+│
+├── preprocess.py               ← Takeout → flat pipe-delimited files
+├── build_watchlog_db.py        ← Flat files + MB lookup → watchlog.db
+├── build_wl_db.py              ← JSON sources + watchlog.db → wl.db
+├── build_data_json.py          ← wl.db → data.json + admin_data.json
+├── server.py                   ← Flask: static files + editing REST API
+│
+├── watchlog.db                 ← Pipeline/enrichment database (MB data, songs)
+├── wl.db                       ← Presentation/application database (source of truth)
+├── data.json                   ← Site data payload (~1,723 KB)
+├── admin_data.json             ← Admin page data (~377 KB)
+│
+├── Google_Takeout/
+│   ├── watch-history.json      ← Raw takeout data
+│   └── watch-history.html      ← Older takeout (HTML format)
+│
+├── name_file.txt               ← Preprocess output: channel index
+├── name_title_file.txt         ← Preprocess output: video catalog
+├── dataset_info.txt            ← Preprocess run manifest
+├── category_review.txt         ← Channels needing manual category review
+│
+├── manual_editing/
+│   ├── to_categorize.csv
+│   ├── apply_rules.py
+│   └── category_rules.txt
+│
 ├── CLAUDE.md                   ← This file
 ├── PLAN.md                     ← Prioritized development plan
-├── Gopogle_Takeout/
-│   ├── takeout-20260316T021540Z-3-001.zip   ← New data, ready to process
-│   └── data_structure.txt      ← Takeout schema reference
-├── TinyWebServer/              ← Windows-only static file server (to be replaced)
-└── memory/                     ← Claude session memory files
+└── table_structure.txt         ← wl.db table reference
 ```
-
-**Output files produced by preprocess.py (not yet present — pipeline not yet run):**
-- `name_file.txt` — channel/artist index (pipe-delimited)
-- `name_title_file.txt` — video catalog (pipe-delimited)
-- `dataset_info.txt` — run manifest / statistics
-- `category_review.txt` — unsure channels for manual review
-
-**Output files produced by build_watchlog_db.py:**
-- `watchlog.db` — SQLite database (not yet present — pipeline not yet run)
 
 ---
 
-## Data Pipeline (current state — all scripts built, not yet run on new data)
+## Data Pipeline
 
 ```
 Google Takeout ZIP
     ↓
-[unzip to working folder]
+preprocess.py               → name_file.txt, name_title_file.txt, category_review.txt
     ↓
-validate_input_files.py     ← NOT YET BUILT — verify format, date ranges, user identity
+[curator reviews category_review.txt]
     ↓
-preprocess.py               ← parse + clean + categorize → flat text files
-    ↓ (produces name_file.txt, name_title_file.txt, category_review.txt, dataset_info.txt)
-[curator reviews category_review.txt, edits if needed]
+build_watchlog_db.py        → watchlog.db  (MB enrichment, title cleaning, songs)
     ↓
-build_watchlog_db.py        ← BUILT — flat files + MusicBrainz → watchlog.db
-    ↓ (title cleaning, MB artist + recording enrichment, songs table — all cached in DB)
-build_data_json.py          ← BUILT — watchlog.db + flat files → data.json
+build_wl_db.py              → wl.db        (presentation DB, wl_songs/videos/links)
     ↓
-commit step                 ← NOT YET BUILT — timestamp-stamped, logged, rollback-safe
+build_data_json.py          → data.json + admin_data.json
     ↓
-data.json                   ← served by static site
+python server.py            (editing) or python -m http.server (view-only)
 ```
+
+**Key rule:** `build_wl_db.py` drops and recreates all pipeline tables on every run. User-edited tables (`wl_artist_links` and future curator tables) use `CREATE TABLE IF NOT EXISTS` and are **never dropped** — their data survives rebuilds.
+
+---
+
+## Database Architecture
+
+### Two-database design
+
+| Database | Role |
+|---|---|
+| `watchlog.db` | Pipeline and enrichment. Raw takeout fields, MB data, title cleaning. Rebuilt when new takeout data arrives or MB enrichment runs. |
+| `wl.db` | Presentation and application. What the site and API read. Contains user-editable curator tables. Source of truth for `data.json`. |
+
+### wl.db table groups
+
+| Group | Tables | Source | Survives rebuild? |
+|---|---|---|---|
+| `wh_` | `wh_events` | `watch-history.json` | No — pipeline |
+| `dj_` | `dj_artists`, `dj_artist_videos`, `dj_other_channels`, `dj_other_videos`, `dj_recent`, `dj_cat_counts`, `dj_meta` | `data.json` | No — pipeline |
+| `ad_` | `ad_channels`, `ad_stats` | `admin_data.json` | No — pipeline |
+| `wl_` pipeline | `wl_songs`, `wl_videos`, `wl_song_video` | `watchlog.db` | No — pipeline |
+| `wl_` user | `wl_artist_links` (+ future) | User editing | **Yes — preserved** |
+
+### wl_songs / wl_videos / wl_song_video
+
+Music videos from `watchlog.db` are imported into `wl.db` with proper song deduplication:
+- One `wl_songs` row per unique (normalized title, normalized artist)
+- All videos linked to their song via `wl_song_video` junction (no UNIQUE constraint — allows future MB duplicate candidates)
+- `wl_match_type`: `'exact'` or `'normalized'` (case difference)
+- `wl_match_basis`: `'title+artist'` or `'title_only'`
+
+### wl_artist_links (user-editable)
+
+Artist "See Also" relationships. Uses `dj_slug` as the stable key (survives rebuilds; stable because it is computed deterministically from the artist name). Relationships are directional. The UI provides a "Mutual" option that adds both directions in one operation.
+
+```sql
+CREATE TABLE IF NOT EXISTS wl_artist_links (
+    wl_al_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    wl_from_slug  TEXT NOT NULL,
+    wl_to_slug    TEXT NOT NULL,
+    wl_label      TEXT NOT NULL DEFAULT 'See also',
+    UNIQUE(wl_from_slug, wl_to_slug)
+);
+```
+
+---
+
+## Backend / Editing Architecture
+
+The site is not static. Data will be editable. Architecture:
+
+**Current (interim):** `server.py` (Flask) serves static files + REST API for `wl_artist_links`. The JS detects the server via `GET /api/health` and enables edit controls automatically.
+
+**Target (post-Docker):** FastAPI or Flask backend serves API endpoints (`/api/artists`, `/api/songs`, etc.). HTML pages `fetch('/api/...')` instead of `fetch('data.json')`. Enables server-side filtering, pagination, and full write-back.
+
+**WAL mode:** Must be enabled on `wl.db` before any concurrent use (pipeline running while user edits):
+```python
+con.execute("PRAGMA journal_mode=WAL")
+```
+Already applied in `server.py`. Must be applied to any future backend entry point.
+
+### Current API endpoints (server.py)
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/health` | Server detection |
+| GET | `/api/artists?q=` | Artist search for link targets |
+| GET | `/api/artist-links/<slug>` | Get see-also links for an artist |
+| POST | `/api/artist-links` | Add link (`from_slug`, `to_slug`, `label?`, `mutual?`) |
+| DELETE | `/api/artist-links/<id>` | Remove one link |
+
+---
+
+## Site Pages (index.html)
+
+**Nav:** `Home | Artists | Songs | Channels | Search` + player mode toggle
+
+| Page | Status | Notes |
+|---|---|---|
+| Home | Working | 5 stat cards, recent + top artists + top songs |
+| Artists | Working | Filterable/sortable grid, featured Ren + Gorillaz cards |
+| Artist Detail | Working | Hero, MB chips, bio/arcs (featured), See Also section, paginated video list |
+| Songs | Working | Filter by title + artist, sort by plays/A–Z/recent/year, 4,989 songs |
+| Song Detail | Working | MB data, source videos |
+| Channels | Working | Category tabs, filter, paginated grid |
+| Channel Detail | Working | Hero, video list |
+| Search | Working | Searches artists, songs, channels, recent videos |
+
+**Player modes:** Embed (player.html via IFrame API) or YouTube (direct tab). Toggle in nav.
+
+---
+
+## MusicBrainz Integration
+
+- Artist-level matching: ~80–90% confidence for artists with >10 plays
+- Recording-level: ~50–65% due to YouTube title noise
+- `channel_url` is the disambiguation key
+- Rate-limited to 1 req/sec; results cached in `watchlog.db`
+- Status values: `accepted` (≥85), `review` (60–84), `no_match` (<60), `pending`
+- Re-runs skip already-cached records
+- No MB enrichment run yet on songs — `mb_recording_id` is NULL for all `wl_songs`
+- Run MB enrichment via `admin.html` channel selector → generates CLI command
 
 ---
 
 ## Data Structure Rules
 
 ### Raw Data is Sacred
-The takeout files are backup archives — never modified. All processing produces new files in parallel.
+Takeout files are never modified. All processing writes new files in parallel.
 
 ### All Removed Text Must Be Preserved
-Title cleaning in `build_watchlog_db.py` stores every piece of text removed from a video title in a `stripped_text` JSON array column. Each entry has a `type` label (`artist_prefix`, `feat_artist`, `noise_suffix`, `noise_suffix_re`). Nothing is discarded.
+Title cleaning in `build_watchlog_db.py` stores every piece of text removed from a video title in `stripped_text` (JSON array). Each entry has a `type` label (`artist_prefix`, `feat_artist`, `noise_suffix`, etc.). Nothing is discarded.
 
 ### Channel Normalization
-- `channel_url` is the **stable key** — channel names can change, URLs do not
-- `" - Topic"` and `"VEVO"` suffixes stripped for display (kept in raw_name)
-- Ren's channels kept separate: `Ren`, `Ren - Topic`, `RenMakesStuff` (different content)
+- `channel_url` is the **stable key** — channel names change, URLs do not
+- `" - Topic"` and `"VEVO"` suffixes stripped for display (kept in `raw_name`)
 
-> ⚠️ **[SPECIAL ATTENTION]** `build_data_json.py` currently sets `channel_count: 1` for all artists. The original `data.json` had `channel_count: 4` for Ren (multiple channels aggregated under one artist). Multi-channel artist grouping logic is not yet implemented in the new pipeline.
-
-### Title Cleaning (implemented in build_watchlog_db.py)
-- `"Watched "`, `"Watched this "` prefixes stripped by `preprocess.py` (Google-added prefix)
-- In `build_watchlog_db.py`, further cleaning produces:
-  - `cleaned_title` — canonical song name (artist prefix, feat., noise suffixes removed)
-  - `feat_artist` — extracted featured artists
-  - `stripped_text` — JSON array of everything removed with type labels
-  - `media_type` — canonical content format (Official Music Video, Official Audio, Official Lyric Video, Live, Acoustic, Visualizer, Music Video)
-- Rules are **still hardcoded** in `build_watchlog_db.py` — rules template file not yet built
-
-> ⚠️ **[SPECIAL ATTENTION]** Title cleaning rules should be moved to an external template file (see PLAN.md 2.2). Currently they are in Python source, making them non-curator-editable.
-
-### Data Handling for Edge Cases
-When anomalies are found in real data:
-1. Separate problem data from clean data
-2. Document: what was found, nature of problem, possible fixes
-3. Do NOT act on fixes — present for analysis only
-4. Continue processing clean portion
+### Title Cleaning Fields (in watchlog.db.videos)
+| Field | Purpose |
+|---|---|
+| `cleaned_title` | Canonical song name (artist prefix, feat., noise removed) |
+| `feat_artist` | Extracted featured artists |
+| `stripped_text` | JSON array of everything removed with type labels |
+| `media_type` | Official Music Video, Official Audio, Lyric Video, Live, Acoustic, etc. |
 
 ### Sandboxing Rule
-Preprocessing and comparison to raw data all takes place in sandboxed files.
-Committing to the live `data.json` is a separate, explicit step with a timestamp marker.
+Pipeline output is validated before committing to live `data.json`. The commit step is explicit and logged.
 
 ---
 
-## Database Strategy
+## Featured Artists
 
-**Current:** Two-layer storage:
-1. Flat pipe-delimited text (`name_file.txt`, `name_title_file.txt`) — primary pipeline output, human-readable, portable
-2. SQLite (`watchlog.db`) — enrichment layer with MusicBrainz data and derived fields. Not required to run the site; used to enrich `data.json`.
+Ren Gill and Gorillaz are hardcoded featured artists in `index.html` (biography, narrative arcs in `ARTIST_META` JS object). A third featured artist requires moving these to external files first.
 
-**watchlog.db tables:**
-| Table | Purpose |
-|---|---|
-| `channels` | One row per channel. All takeout fields + MB artist fields. |
-| `videos` | One row per unique video. All takeout fields + cleaning fields (cleaned_title, feat_artist, stripped_text, media_type) + MB recording fields (mb_song_name, mb_isrc, mb_release_date, mb_release_type, mb_duration_ms, etc.). |
-| `songs` | Deduplicated canonical songs. Keyed by mb_recording_id if matched, else by artist+cleaned_title. |
-| `run_log` | Audit trail of pipeline runs. |
-
-**MusicBrainz caching:** All MB results stored in `watchlog.db` with `mb_cached_at` timestamp and `mb_status` (`accepted` / `review` / `no_match` / `pending`). Re-runs skip already-cached records.
-
-**Upgrade path:** Remaining tables (playlists, user notes, admin overrides) go in SQLite when needed.
-
----
-
-## Song Table (built in watchlog.db — basic version)
-
-The `songs` table in `watchlog.db` and the `songs` array in `data.json` now exist.
-
-| Field | Source | Notes |
-|---|---|---|
-| `song_id` | System-generated | hex timestamp + counter |
-| `mb_recording_id` | MusicBrainz | null if unmatched |
-| `mb_song_name` | MusicBrainz | canonical title |
-| `cleaned_title` | Derived | always present; pre-MB best-effort |
-| `channel_url` | Takeout | primary artist channel |
-| `artist_name` | Takeout | norm_name |
-| `mb_artist_id` | MusicBrainz | from channel enrichment |
-| `feat_artist` | Derived | extracted from title |
-| `mb_release_date` | MusicBrainz | |
-| `isrc` | MusicBrainz | comma-separated if multiple |
-| `mb_confidence` | MusicBrainz | 0–100 score |
-| `notes` | Manual | freeform, curator-added |
-| `video_count` | Aggregated | source video count |
-
-> ⚠️ **[SPECIAL ATTENTION]** The songs table is built from `watchlog.db` output. It has not yet been populated with real data (pipeline not yet run). The planned `notes` field from CLAUDE.md's original song table design is present as a column but no mechanism exists yet to populate it from the curator review flow.
-
----
-
-## MusicBrainz Integration (built — not yet run on real data)
-
-**Evaluation summary (2026-03-19):**
-- Artist-level matching: high confidence (~80–90% for artists with >10 plays)
-- Recording-level matching: medium confidence (~50–65%) due to title noise in YouTube titles
-- Best match candidates: `YouTube Music` header rows first, then `" - Topic"` channels, then `VEVO`
-- The `channel_url` field is the tiebreaker for artist disambiguation (e.g., multiple artists named "Ren")
-
-**Implementation:** `build_watchlog_db.py`
-- Uses `urllib` only (no external packages required)
-- Rate-limited to 1 req/sec via `time.sleep()`
-- User-Agent: `WatchLog/1.0 (dufner6161@gmail.com)` (required by MB policy)
-- Accept threshold: score ≥ 85 → `accepted`; score 60–84 → `review`; below → `no_match`
-- Flags: `--skip-mb` (offline), `--mb-artists-only`, `--mb-limit N` (for testing)
-
----
-
-## Pages — Current Layout (index.html as of 2026-03-19)
-
-**Nav:** `Home | Artists | Songs | Channels | Search` + player mode toggle (top right)
-
-### Home Page
-- 5 stat cards: Total Watches, Music Plays, Artists, Songs, Other (all clickable nav)
-- Two columns: Recently Watched (left) | Top Artists + Top Songs stacked (right)
-
-### Artists Page (`#artists`)
-- Featured artist cards (Ren, Gorillaz) hardcoded at top
-- Filterable/sortable artist grid (48/page): plays, A–Z, recently watched
-- Artist cards show MB country + type if matched
-- *Planned: A–Z sidebar filter, larger search*
-
-### Artist Detail Page (`#artist/slug`)
-- Hero: initials avatar, play count, last watched, video count
-- MB chips row: country, type, active years, top 5 genre tags, confidence score
-- Featured artists: biography (from ARTIST_META in JS), narrative arcs, affiliate chips
-- Paginated video list with "Play Page" queue button
-- Media type badge on each video
-
-### Songs Page (`#songs`)
-- Filter by title + separate filter by artist name
-- Sort: most played, A–Z, recently watched, release year
-- Song cards: title, artist, feat., plays, year, release type, media type badge, ISRC
-
-### Song Detail Page (`#song/artist-slug/title-slug`)
-- Full MB data: recording ID, ISRC, release title/date/type, duration, confidence
-- Original raw YouTube title shown if different from cleaned title
-- Source videos panel with thumbnails
-
-### Channels Page (`#channels`)
-- Category tabs (TV, Tech, Food, Comedy, News, Gaming, Mystery/Unsure)
-- Text filter, paginated channel grid
-- Channel cards show MB country/type if matched
-
-### Channel Detail Page (`#channel/slug`)
-- Hero with MB chips if available
-- Paginated video list
-
-### Search (`#search`)
-- Searches: artists, songs, channels, recent videos — shown in four labeled sections
-
-### Player Mode Toggle
-- **Embed mode** (default): opens `player.html` with YouTube IFrame API. YouTube may reject on some networks.
-- **YouTube mode**: opens `youtube.com/watch?v=...` directly in a new browser tab.
-
----
-
-## Pages — Still Planned (not yet built)
-
-- **Settings page** — theme switcher, home page display options
-- **Admin page** — import tool links, dataset stats, category management, featured artist management
-- **About page** — dataset stats (currently on home page)
-
----
-
-## Featured Artists — FUTURE (not on main site yet)
-
-Featured artist pages combine:
-1. Auto-pulled video history from the pipeline
-2. Hand-authored narrative (biography, story, context)
-3. Structured metadata (arcs, affiliations) in JSON files
-
-**Rule: Claude must NEVER invent biographical details.** Use only what is documented here or in `profile.md` files. Mark gaps as `[TO BE WRITTEN]`.
-
-Planned file structure:
-```
-featured_artists/
-└── {slug}/
-    ├── profile.md         ← Biography, hand-authored
-    ├── arcs.json          ← Named song groupings / narrative arcs
-    └── affiliations.json  ← Related artists (channel_url as key)
-```
+**Rule: Claude must NEVER invent biographical details.** Use only what is documented here or in profile files. Mark gaps as `[TO BE WRITTEN]`.
 
 ### Ren Gill
-- Full name: Ren Gill. From Wales, based in Brighton.
-- Channels: `Ren`, `Ren - Topic` (auto), `RenMakesStuff`
+- Full name: Ren Gill. Wales-born, based in Brighton.
+- Channels: `Ren`, `Ren - Topic`, `RenMakesStuff`
 - Genre: Rap, folk, spoken word, theatrical.
 - ~10 years undiagnosed Lyme Disease. Story of perseverance.
 - Key work: *Hi Ren* — theatrical self-dialogue.
@@ -321,44 +301,16 @@ featured_artists/
 - Fictional band: 2-D, Murdoc Niccals, Noodle, Russel Hobbs
 - 50+ collaborators. Ongoing fictional world/narrative.
 - Notable eras: Plastic Beach (2010), Song Machine (2020+)
-- Related channels: `Gorillaz`, `Gorillaz - Topic`, `GZ 23`, `whatsnextgorillaz`
-- Blur connection: Damon Albarn frontman. `Blur - Topic` in the data.
-
----
-
-## Notes Field
-
-The `notes` column in `name_file.txt` contains free-text metadata added manually during category review. Unstructured. Preserved verbatim.
-
-> ⚠️ **[SPECIAL ATTENTION]** The `notes` field is referenced in design but does not yet flow through the pipeline. `preprocess.py` does not output a notes column, and `build_watchlog_db.py` does not read one. This needs to be reconciled when the admin/curator workflow is built.
-
----
-
-## Roadmap Summary
-
-| Horizon | Focus |
-|---|---|
-| **NOW** | Run pipeline on new takeout data (blocked on preprocess.py run), Docker setup, code split (HTML→CSS+JS) |
-| **NEAR** | validate_input_files.py, rules template file, settings/themes, admin page skeleton, commit/rollback step |
-| **FUTURE** | Deep search, playlist builder, featured artist pages, multi-channel artist grouping |
-
-See `PLAN.md` for detailed task breakdown.
+- Related channels: `Gorillaz`, `Gorillaz - Topic`, `GZ 23`
 
 ---
 
 ## Workflow Notes
 
-- Owner types fast, captures ideas quickly — notes may be rough. Make reasonable interpretations and confirm.
-- FoxPro/ColdFusion database background — thinks in normalized tables naturally.
-- Cordon Bleu + civil engineering + ESPHome/WLED/Home Assistant background.
-- Interests: golden ratio, non-Western math, Alan Watts / philosophy.
-- Playlists are future — hold off on UI. Interim plain-text format:
-  ```
-  # playlist_name: Late Night Chill
-  # created: 2026-03-10
-  video_id, artist, title
-  ```
+- Owner thinks in normalized tables naturally (FoxPro/ColdFusion background).
+- Notes may be rough — make reasonable interpretations and confirm.
+- Other active projects: LED matrix, ESP32, Home Assistant nav, smart switch, kinetic art.
 
 ---
 
-*Last updated: 2026-03-19*
+*Last updated: 2026-04-07*

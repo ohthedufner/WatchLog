@@ -1,7 +1,5 @@
 # PLAN.md — WatchLog Development Plan
-*Created: 2026-03-19 | Last updated: 2026-03-19*
-
----
+*Created: 2026-03-19 | Last updated: 2026-04-07*
 
 ## Priority Legend
 - ✅ Done
@@ -15,35 +13,29 @@
 
 ## Phase 1 — Foundation
 
-### 1.1 ✅ Bridge Script: `build_data_json.py`
-**Status:** Complete.
-**What was built:** Reads `name_file.txt` + `name_title_file.txt`, optionally joins MB enrichment from `watchlog.db`, and writes `data.json`. Schema expanded from original spec to include:
-- `songs` array (deduplicated music recordings with MB data)
-- MB fields on artists: `mb_id`, `mb_country`, `mb_type`, `mb_begin`, `mb_tags`, `mb_conf`
-- MB fields on channels: same subset
-- MB fields on videos within artists: `mt` (media type), `ms` (MB song name), `isrc`, `rd` (release date), `rt` (release type)
-
-**Usage:**
-```bash
-python build_data_json.py --channels name_file.txt --videos name_title_file.txt
-python build_data_json.py --channels name_file.txt --videos name_title_file.txt --db watchlog.db
-```
-
-> ⚠️ `channel_count` is set to `1` for all artists. Original data had `4` for Ren (multiple channels merged). Multi-channel grouping not yet implemented — this is a known gap.
+### 1.1 ✅ Data Pipeline: `build_wl_db.py`
+**Status:** Complete. Builds `wl.db` from Google Takeout JSON + `watchlog.db`.
+**What was built:**
+- `wh_events` — raw watch events from Takeout (with YouTube TV events excluded)
+- `dj_*` tables — artist/channel/video/recent derived views
+- `ad_*` tables — admin stats and channel list with MB enrichment status
+- `wl_songs` / `wl_videos` / `wl_song_video` — deduplicated song model loaded from `watchlog.db`
+- `wl_artist_links` — curator-managed "See Also" links (user table, never dropped on rebuild)
+- Pipeline tables dropped and recreated each run; user tables use `CREATE TABLE IF NOT EXISTS`
 
 ---
 
-### 1.2 🔴 Run the New Takeout Data End-to-End
-**Status:** Blocked — `preprocess.py` not yet run on new zip.
-**What's needed:**
-1. Unzip `Gopogle_Takeout/takeout-20260316T021540Z-3-001.zip` to a working folder
-2. Run `preprocess.py` with `--append` if prior flat files exist; fresh run otherwise
-3. Review `category_review.txt`
-4. Run `build_watchlog_db.py` (with `--mb-limit` for first test pass)
-5. Run `build_data_json.py --db watchlog.db`
-6. Verify site loads and songs/MB data is populated
+### 1.2 ✅ Bridge Script: `build_data_json.py`
+**Status:** Complete. Rewrote 2026-04-07 to source entirely from `wl.db`.
+**What was built:**
+- Reads only `wl.db` — no pipe files, no `watchlog.db`
+- Generates `data.json` (artists, songs, other_channels, recent, cat_counts)
+- Generates `admin_data.json` (stats, channels list)
+- Songs section aggregated from `wl_songs + wl_videos + wl_song_video` via SQL
+- Admin stats computed from live row counts (no circular `ad_stats` dependency)
+- See Also links embedded in artist objects from `wl_artist_links`
 
-**Note:** `data.json` is currently the old hand-built file. The site will not show songs or MB data until this step is complete.
+> ⚠️ Only 891/5,540 music videos have `wl_date_last` — "Recently Watched" sort on songs is sparse. Upstream data quality issue in `watchlog.db`.
 
 ---
 
@@ -51,21 +43,21 @@ python build_data_json.py --channels name_file.txt --videos name_title_file.txt 
 **Status:** Not started.
 **What:** Replace TinyWebServer with a portable dev environment.
 **Deliverables:**
-- `Dockerfile` — Python 3 base image, copies project files, runs `python -m http.server 8080`
-- `docker-compose.yml` — mounts project folder as volume so edits are live
+- `Dockerfile` — Python 3, installs Flask, runs `server.py`
+- `docker-compose.yml` — mounts project folder as volume (live edits)
 - `README-docker.md` — one-page quick start
-**Dependencies:** None (can be done in parallel with any other task)
+**Dependencies:** None — can be done in parallel with any other task.
 
 ---
 
-### 1.4 🟡 Code Split: Extract CSS and JS from `index.html`
-**Status:** Not started. `index.html` has grown from 730 to ~950 lines.
+### 1.4 🟢 Code Split: Extract CSS and JS from `index.html`
+**Status:** Not started. `index.html` is now ~1,100+ lines.
 **What:** Break the monolith into maintainable pieces.
 **Deliverables:**
 - `watchlog.css` — all styles
 - `watchlog.js` — all JavaScript
 - `index.html` — links only, much shorter
-**Why needed:** Theme switching requires CSS variables in a standalone file. Debugging JS is increasingly difficult inline.
+**Why needed:** Theme switching requires CSS variables in a standalone file. Debugging JS is increasingly difficult inline. Required before Settings page (3.6).
 
 ---
 
@@ -74,224 +66,206 @@ python build_data_json.py --channels name_file.txt --videos name_title_file.txt 
 ### 2.1 ✅ MusicBrainz Evaluation
 **Status:** Complete (2026-03-19).
 **Findings:**
-- Artist-level matching: high confidence (~80–90% for artists with >10 plays)
-- Recording-level: medium (~50–65%) due to YouTube title noise
-- `channel_url` is the disambiguation key (e.g., two artists named "Ren")
-- Best match order: YouTube Music header → Topic channels → VEVO → general music category
+- Artist-level matching: high confidence (~80-90% for artists with >10 plays)
+- Recording-level: medium (~50-65%) due to YouTube title noise
+- `channel_url` is the disambiguation key
+- Best match order: YouTube Music header / Topic channels / VEVO / general music
 
 ---
 
 ### 2.2 ✅ MusicBrainz Integration: `build_watchlog_db.py`
-**Status:** Complete (2026-03-19).
+**Status:** Complete (2026-03-19). Builds `watchlog.db` with MB enrichment.
 **What was built:**
-- SQLite database (`watchlog.db`) with tables: `channels`, `videos`, `songs`, `run_log`
-- Title cleaning pipeline: `cleaned_title`, `feat_artist`, `stripped_text` (JSON array, preserves all removed text with type labels), `media_type`
-- MB artist enrichment: country, type, begin/end dates, genre tags, disambiguation, confidence score
-- MB recording enrichment: canonical song name, ISRC, release title/date/type, duration, confidence
-- Results cached in DB — re-runs skip already-matched records
-- Rate-limited to 1 req/sec, stdlib only (no external packages)
-- Flags: `--skip-mb`, `--mb-artists-only`, `--mb-limit N`
+- Title cleaning pipeline: `cleaned_title`, `feat_artist`, `stripped_text`, `media_type`
+- MB artist enrichment: country, type, begin/end dates, genre tags, disambiguation, confidence
+- MB recording enrichment: canonical song name, ISRC, release title/date/type, duration
+- Results cached — re-runs skip already-matched records
+- Rate-limited to 1 req/sec, stdlib only
 
-**Usage:**
-```bash
-python build_watchlog_db.py --channels name_file.txt --videos name_title_file.txt
-python build_watchlog_db.py --db watchlog.db --stats
-python build_watchlog_db.py --channels name_file.txt --videos name_title_file.txt --skip-mb
-```
-
-> ⚠️ Has not been run on real data yet (blocked on 1.2). Tested with small fixture files only.
+> ⚠️ MB enrichment run via `admin.html` per channel. Run on more channels as time allows.
 
 ---
 
 ### 2.3 🟢 Rules Template File
 **Status:** Not started.
-**What:** Move hardcoded title/name cleaning rules out of `build_watchlog_db.py` into a curator-editable text file.
-
-> ⚠️ **[SPECIAL ATTENTION]** Currently, the noise suffix lists (`NOISE_SUFFIX_LITERALS`, `NOISE_REGEX_PATTERNS`, `FEAT_PATTERNS`, `MEDIA_TYPE_MAP`) are Python lists in `build_watchlog_db.py`. This violates the intent of keeping rules curator-editable. This is the highest-friction gap in the cleaning pipeline for a non-developer user.
-
-**Proposed format:**
-```
-# Prefix removal
-strip_artist_prefix           # "ArtistName - " at start
-
-# Featured artist extraction
-extract_feat  \(feat\. ([^)]+)\)
-extract_feat  \(ft\. ([^)]+)\)
-
-# Noise suffixes (literal)
-strip_suffix  (Official Music Video)
-strip_suffix  (Official Audio)
-...
-
-# Media type classification
-media_type Official Music Video = official music video
-media_type Official Audio       = official audio
-```
+**What:** Move hardcoded title/name cleaning rules in `build_watchlog_db.py` to a curator-editable text file.
+**Why needed:** `NOISE_SUFFIX_LITERALS`, `NOISE_REGEX_PATTERNS`, `FEAT_PATTERNS`, `MEDIA_TYPE_MAP` are Python lists — not editable without touching code.
 
 ---
 
 ## Phase 3 — Core Site Features
 
 ### 3.1 ✅ Songs Page
-**Status:** Complete (2026-03-19).
-**What was built:** New `#songs` page in `index.html`:
-- Filter by title, separate filter by artist
-- Sort: most played, A–Z, recently watched, release year
-- Song cards: title, artist, feat., plays, year, release type, media type badge, ISRC
+**Status:** Complete. Now populated with 4,989 real songs from `wl_songs`.
+- Filter by title and artist
+- Sort: most played, A-Z, recently watched
+- Song cards: title, artist, feat., plays, latest
+- Song detail: source videos lookup by video ID in artists[]
 
 ---
 
 ### 3.2 ✅ Song Detail Page
-**Status:** Complete (2026-03-19).
-**What was built:** New `#song/artist-slug/title-slug` page:
-- Full MB data display: recording ID, ISRC, release title/date/type, duration, confidence
-- Original raw YouTube title shown if different from cleaned title
-- Source videos panel with thumbnails and play buttons
+**Status:** Complete. Shows MB data when available; source video panel with thumbnails.
 
 ---
 
 ### 3.3 ✅ Channels Page
-**Status:** Complete (2026-03-19). Previously called "Videos" page in nav.
-**What changed:**
-- Renamed from "Videos" to "Channels" in nav (`#channels`)
-- Channel cards now show MB country/type if matched
-- Channel detail now shows MB chips
-- Channel detail video list is now paginated (was flat)
-- Backward compat: `#videos` hash still works (redirects to `#channels`)
+**Status:** Complete (2026-03-19). Renamed from "Videos". Shows MB country/type chips.
 
 ---
 
 ### 3.4 ✅ Player Mode Toggle
-**Status:** Complete (2026-03-19). Not in original plan — added in response to YouTube IFrame restrictions.
-**What was built:** Two-button toggle in top-right nav:
-- **Embed** (default): opens `player.html` with YouTube IFrame API
-- **YouTube**: opens `youtube.com/watch?v=...` directly in a new tab
-- All video links and "Play Page" queue button respect the selected mode
+**Status:** Complete (2026-03-19). Embed / YouTube direct toggle in nav.
 
 ---
 
-### 3.5 🟡 `validate_input_files.py`
+### 3.5 ✅ Admin Page (`admin.html`)
+**Status:** Complete. Shows dataset stats, channel list with MB enrichment status and confidence, per-channel MB run controls.
+
+---
+
+### 3.6 ✅ Artist "See Also" Editing Interface
+**Status:** Complete (2026-04-07).
+**What was built:**
+- `wl_artist_links` table in `wl.db` (user table — survives rebuilds)
+- `server.py` — Flask local server with static file serving + REST API
+- API: `GET /api/health`, `GET /api/artists?q=`, `GET /api/artist-links/<slug>`, `POST /api/artist-links`, `DELETE /api/artist-links/<id>`
+- Artist detail page: See Also chips with remove button (server mode only)
+- Search dropdown: type-to-search artists by name, mutual link checkbox
+- `serverMode` flag: detected at boot via `GET /api/health` with 600ms timeout
+
+> ⚠️ WAL mode enabled per-connection in `server.py` via PRAGMA. Sufficient for single local user. Full WAL on DB open not yet set at DB creation time in `build_wl_db.py`.
+
+---
+
+### 3.7 🟡 `validate_input_files.py`
 **Status:** Not started.
 **What:** Pre-flight check before running `preprocess.py`.
 **Checks:**
-- File is valid JSON in expected format
+- Valid JSON in expected Takeout format
 - `header` field values are expected (`YouTube`, `YouTube Music`, `YouTube TV`)
-- Date ranges relative to existing data (overlap detection)
-- Data format unchanged by Google (structural validation)
+- Date ranges / overlap detection against existing data
 - Enumerate invalid/missing records with reasons
 
 ---
 
-### 3.6 🟡 Settings Page + Theme Switcher
-**Status:** Not started.
+### 3.8 🟡 Settings Page + Theme Switcher
+**Status:** Not started. Requires 1.4 (code split) first.
 **What:** New page within SPA with theme selection.
 **Themes:**
-- `theme-neon` — current dark neon (legacy, kept for nostalgia)
+- `theme-neon` — current dark neon (legacy)
 - `theme-dark` — new readable dark theme (default)
 - `theme-light` — new light theme
 **Requirements:**
-- All theme values via CSS variables (requires 1.4 code split first)
-- Theme choice persisted in localStorage
-- Fonts slightly larger than current
-- Text/background contrast must be readable
-- Home page display options (placeholders only initially)
-
----
-
-### 3.7 🟢 Admin Page (skeleton)
-**Status:** Not started.
-**What:** `admin.html` — links to tools, no functionality yet.
-**Sections:**
-- Import (link to pipeline tools)
-- Dataset stats (read from `dataset_info.txt`)
-- Category management (placeholder)
-- Artist management (placeholder)
-- Song list management (link to songs page for now)
-- Featured Artists management (placeholder)
-
----
-
-### 3.8 🟢 Commit Step + Run Log
-**Status:** Not started.
-**What:** Formalize the step that moves sandboxed data into live `data.json`.
-**Requirements:**
-- Timestamp marker on every commit
-- Log file: date, source file, record count, categories, MB match rates
-- Rollback capability (keep N previous `data.json` versions with timestamps)
-**Note:** `run_log` table exists in `watchlog.db` but the data.json commit step is separate and not yet formalized.
+- All theme values via CSS variables
+- Theme persisted in localStorage
 
 ---
 
 ### 3.9 🟢 Multi-Channel Artist Grouping
-**Status:** Not started. Known gap from 1.1.
-**What:** `build_data_json.py` currently treats each channel_url as a distinct artist. Ren has at least 3 channels (`Ren`, `Ren - Topic`, `RenMakesStuff`) that should appear merged under one artist entry with `channel_count: 3`.
+**Status:** Not started. Known gap.
+**What:** Artists like Ren have multiple channels (`Ren`, `Ren - Topic`, `RenMakesStuff`) that should merge into one entry with accurate `channel_count`.
 **Approach options:**
-- A) Use `mb_artist_id` as the grouping key (most accurate, requires MB match)
+- A) Use `mb_artist_id` as grouping key (requires MB match)
 - B) User-defined merge rules file (`channel_merges.txt`)
 - C) Normalize `norm_name` after Topic/VEVO stripping (approximate, fast)
 
-> ⚠️ **[SPECIAL ATTENTION — decision needed]** Option A is cleanest but requires MB coverage. Option B requires curator input. Option C will produce false merges (two different artists with same display name). Recommendation: implement A with B as fallback. Input needed before building.
+---
+
+### 3.10 🟢 Commit Step + Run Log
+**Status:** Not started.
+**What:** Formalize the step that moves rebuilt data into live `data.json`.
+**Requirements:**
+- Timestamp marker on every build
+- Log: date, source file, record counts, MB match rates
+- Rollback: keep N previous `data.json` versions with timestamps
 
 ---
 
-## Phase 4 — Future (Design Awareness Only)
+## Phase 4 — Backend API (Post-Docker)
 
-### 4.1 ⚪ Featured Artist Pages
-Full implementation: `profile.md` + `arcs.json` + `affiliations.json` per artist.
-Ren Gill and Gorillaz are the first two. Currently, bio and arcs are hardcoded in `index.html` JS (`ARTIST_META`). These must be moved to external files before adding a third featured artist.
-Prerequisite: Admin page, document management decision.
+### 4.1 🟡 Full Backend API: FastAPI or Flask
+**Status:** `server.py` is the working prototype (artist links only). Full backend not yet built.
+**What:** Replace all `fetch('data.json')` calls in JS with API endpoints.
+**Endpoints needed (minimum):**
+- `GET /api/artists` — paginated, with search
+- `GET /api/artist/<slug>` — full artist detail
+- `GET /api/songs` — paginated, with search
+- `GET /api/recent`
+- `GET /api/channels`
+- Existing artist-links endpoints (already in server.py)
+**Dependencies:** Docker (1.3) — backend should run in container.
 
-### 4.2 ⚪ Deep Search
+---
+
+### 4.2 🟡 WAL Mode at DB Creation
+**Status:** Currently set via PRAGMA per-connection in `server.py`. Should be set at creation time in `build_wl_db.py`.
+**What:** Add `PRAGMA journal_mode=WAL` to `build_wl_db.py` before any writes, so all connections inherit WAL automatically.
+
+---
+
+## Phase 5 — Future (Design Awareness Only)
+
+### 5.1 ⚪ Featured Artist Pages
+Full per-artist profiles: bio, affiliations, arcs, timeline.
+Ren and Gorillaz are priority candidates. "See Also" links (3.6) are the first step toward this.
+Prerequisite: Admin page complete, document management decision, move `ARTIST_META` out of index.html JS.
+
+### 5.2 ⚪ wl_songs Editing
+Curator-editable fields on song records: correct title, correct artist, manual MB ID override.
+Will follow the same pattern as artist links: backend API + in-page editing UI.
+Prerequisite: Full backend API (4.1).
+
+### 5.3 ⚪ MusicBrainz Recording Matching
+`wl_songs` has 0 MB matches currently — `mb_recording_id` all NULL.
+Will require running MB recording lookup on `wl_songs` (similar to channel enrichment).
+
+### 5.4 ⚪ Deep Search
 Search across all metadata: notes, display text, tags, affiliations.
-Currently search only covers artist names, song titles, channel names, and recent video titles.
-Prerequisite: Song table populated, notes field flowing through pipeline.
+Prerequisite: Song table populated with MB data, notes field in pipeline.
 
-### 4.3 ⚪ Playlist Builder
+### 5.5 ⚪ Playlist Builder
 UI for building and saving playlists.
-Prerequisite: Deep search, usage patterns from plain-text playlists.
+Prerequisite: Deep search, usage patterns from existing playlists.
 
-### 4.4 ⚪ Document Management System
-Decision needed: Option A (folders + manifest), B (Obsidian/Joplin), or C (git + markdown).
-Prerequisite: Determined before building any content sections.
+### 5.6 ⚪ MusicBrainz Refresh / Re-enrichment
+TTL-based re-fetch. `mb_cached_at` stored but no TTL logic enforced.
+Suggested: 90 days for artists, 30 days for recordings.
 
-### 4.5 ⚪ MusicBrainz Refresh / Re-enrichment
-TTL-based re-fetch of MB data. Currently `mb_cached_at` is stored but no TTL logic is enforced.
-After first full run, add: skip records cached within N days (suggested: 90 days for artists, 30 for recordings).
+### 5.7 ⚪ Document Management System
+Decision needed before building any content sections:
+- A) Folders + manifest JSON
+- B) Obsidian/Joplin
+- C) Git + Markdown
 
 ---
 
 ## Open Questions / Decisions Needed
 
-1. **Multi-channel artist grouping** — How to merge channels like `Ren`, `Ren - Topic`, `RenMakesStuff` into one artist? See 3.9 above. Decision required before rebuild produces correct channel_count.
+1. **Multi-channel artist grouping** — How to merge Ren's channels? MB ID, rules file, or normalized name? See 3.9. Required before `channel_count` is accurate.
 
-2. **Rules template file format** — What should the external cleaning rules format look like? See 2.3. Should it be a simple INI-style file, YAML, or a custom DSL? Curator-friendliness is the priority.
+2. **Rules template format** — INI-style, YAML, or custom DSL? See 2.3. Curator-friendliness is priority.
 
-3. **Hyphen disambiguation in titles** — `"Artist - Title"` vs `"Artist - Featured Artist"`. Currently the artist prefix is stripped using `norm_name`. This works well for known artists but may strip incorrectly for titles that genuinely start with a hyphenated phrase. Auto-flag for review, or attempt to resolve programmatically first?
+3. **Theme naming** — Suggestions: `Neon` (current), `Midnight`, `Daylight`?
 
-4. **Docker volume strategy** — Mount full project folder (dev) vs copy into image (prod)?
+4. **Document management** — Which option (A/B/C) before content sections are built? See 5.7.
 
-5. **Theme naming** — What to call the three themes? Suggestions: `Neon` (current), `Midnight`, `Daylight`?
-
-6. **Document management** — Which option (A/B/C above) before content sections are built?
-
-7. **Notes field pipeline** — The `notes` column is referenced in design but does not yet flow from any input file through to the DB or site. Where/how does the curator add notes? Admin page? Directly editing `name_file.txt`?
+5. **Notes field** — `notes` column referenced in design but not in pipeline or DB. Where/how does the curator add notes? Admin page? Direct edit in `wl.db`?
 
 ---
 
 ## Items Flagged for Special Attention
 
-These are completed items with known gaps, or design decisions that were deferred:
-
 | Item | Issue |
 |------|-------|
-| `channel_count` in `build_data_json.py` | Always 1; multi-channel grouping not implemented |
-| Title cleaning rules in `build_watchlog_db.py` | Hardcoded Python lists — should be external template file |
-| `notes` field | Exists in design, not in pipeline or DB yet |
-| `build_watchlog_db.py` on real data | Only tested with small fixtures; first real run may surface edge cases |
-| Songs deduplication key | Falls back to `artist+cleaned_title` string when no MB match — susceptible to title variation across versions/remixes |
-| `ARTIST_META` in `index.html` | Ren + Gorillaz bios hardcoded in JS. Third featured artist requires moving to external files first |
-| `data.json` | Still the old hand-built file. Site shows no songs/MB data until pipeline runs |
+| `channel_count` in artists | Always 1; multi-channel grouping not implemented (3.9) |
+| Title cleaning rules | Hardcoded Python lists in `build_watchlog_db.py` — not curator-editable (2.3) |
+| `wl_date_last` coverage | Only 891/5,540 music videos have a date — "recently watched" sort is unreliable |
+| `wl_songs` MB matches | 0 recordings matched to MB — MB recording pipeline not yet run |
+| `ARTIST_META` in `index.html` | Ren + Gorillaz bios hardcoded in JS — third featured artist requires externalizing first |
+| WAL mode | Set per-connection via PRAGMA in `server.py`; not set at DB creation in `build_wl_db.py` (4.2) |
+| `notes` field | In design; not in pipeline, DB, or site yet |
 
 ---
 
-*See CLAUDE.md for full context on design philosophy, data rules, and architecture decisions.*
+*See CLAUDE.md for architecture decisions, field naming convention, table groups, and design philosophy.*

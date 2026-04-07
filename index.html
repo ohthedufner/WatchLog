@@ -193,6 +193,27 @@ nav{position:sticky;top:0;z-index:100;background:rgba(5,5,10,.93);backdrop-filte
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 
+/* SEE ALSO */
+.see-also{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.25rem}
+.see-also-title{font-family:'Space Mono',monospace;font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--text3);margin-bottom:.6rem}
+.see-also-links{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.6rem}
+.see-also-chip{display:inline-flex;align-items:center;gap:.35rem;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:.25rem .7rem;font-size:.78rem;cursor:pointer;transition:all .15s}
+.see-also-chip:hover{border-color:rgba(0,229,255,.4);color:var(--c2)}
+.see-also-chip .rm{background:none;border:none;color:var(--text3);cursor:pointer;font-size:.8rem;padding:0;line-height:1;margin-left:.1rem}
+.see-also-chip .rm:hover{color:var(--c1)}
+.see-also-add{display:flex;gap:.45rem;align-items:center;margin-top:.5rem;position:relative}
+.see-also-input{background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'Space Mono',monospace;font-size:.7rem;padding:.38rem .65rem;flex:1;outline:none;transition:border-color .2s}
+.see-also-input:focus{border-color:rgba(0,229,255,.4)}
+.see-also-btn{background:rgba(170,255,0,.1);border:1px solid rgba(170,255,0,.25);border-radius:6px;color:var(--c3);font-family:'Space Mono',monospace;font-size:.65rem;padding:.38rem .75rem;cursor:pointer;white-space:nowrap;transition:all .15s}
+.see-also-btn:hover:not(:disabled){background:rgba(170,255,0,.2)}
+.see-also-btn:disabled{opacity:.35;cursor:default}
+.see-also-mutual{display:flex;align-items:center;gap:.35rem;font-family:'Space Mono',monospace;font-size:.6rem;color:var(--text3);cursor:pointer}
+.see-also-drop{position:absolute;top:100%;left:0;right:0;background:var(--surface2);border:1px solid rgba(0,229,255,.25);border-radius:6px;z-index:50;margin-top:.2rem;max-height:200px;overflow-y:auto;display:none}
+.see-also-drop.open{display:block}
+.see-also-opt{padding:.45rem .75rem;font-size:.78rem;cursor:pointer;transition:background .1s;display:flex;justify-content:space-between;align-items:center}
+.see-also-opt:hover{background:rgba(0,229,255,.08)}
+.see-also-opt small{font-family:'Space Mono',monospace;font-size:.58rem;color:var(--text3)}
+
 /* SONG DETAIL */
 .song-detail-hero{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.75rem;margin-bottom:1.25rem}
 .song-detail-title{font-family:'Orbitron',monospace;font-weight:700;font-size:1.5rem;margin-bottom:.4rem}
@@ -312,6 +333,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(5,5,10,.93);backdrop-filte
 <div id="page-artist" class="page">
   <button class="back-btn" onclick="go('artists')">← Artists</button>
   <div id="artistHero"></div>
+  <div id="seeAlsoSection"></div>
   <div id="artistExtra"></div>
   <div class="panel">
     <div class="panel-header">
@@ -396,6 +418,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(5,5,10,.93);backdrop-filte
 // DATA & STATE
 // ================================================================
 let DB = null;
+let serverMode = false;   // true when local Flask server is running
 
 const artistSt = { list:[], filtered:[], sort:'plays', q:'', page:0, per:48 };
 const chanSt   = { list:[], filtered:[], cat:'all',   q:'', page:0, per:40 };
@@ -457,6 +480,12 @@ function openPageQueue() {
 // BOOT
 // ================================================================
 async function boot() {
+  // Detect local editing server
+  try {
+    const h = await fetch('/api/health', {signal: AbortSignal.timeout(600)});
+    if (h.ok) serverMode = true;
+  } catch(e) {}
+
   try {
     const r = await fetch('data.json');
     DB = await r.json();
@@ -743,6 +772,7 @@ function renderArtistDetail(s){
   }
   document.getElementById('artistExtra').innerHTML = extra;
   document.getElementById('artistVidCount').textContent = artist.videos.length + ' videos';
+  loadSeeAlso(artist.slug || slug(artist.name));
   renderArtistVids();
 }
 
@@ -757,6 +787,140 @@ function searchAffil(name){
   document.getElementById('searchInput').value = name;
   onSearch(name);
 }
+
+// ================================================================
+// SEE ALSO
+// ================================================================
+let _seeAlsoArtistSlug = '';   // slug of artist currently shown
+let _seeAlsoSelected   = null; // {dj_slug, dj_name} chosen in dropdown
+
+async function loadSeeAlso(artistSlug) {
+  _seeAlsoArtistSlug = artistSlug;
+  _seeAlsoSelected   = null;
+  const el = document.getElementById('seeAlsoSection');
+  if (!el) return;
+
+  let links = [];
+  if (serverMode) {
+    try {
+      const r = await fetch(`/api/artist-links/${encodeURIComponent(artistSlug)}`);
+      links = await r.json();
+    } catch(e) {}
+  } else {
+    // Fall back to data already in the artist object
+    const artist = DB.artists.find(a => a.slug === artistSlug);
+    links = (artist?.see_also || []).map(s => ({
+      wl_al_id:   null,
+      wl_to_slug: s.slug,
+      dj_name:    s.name,
+      wl_label:   s.label || 'See also',
+    }));
+  }
+
+  renderSeeAlso(el, links);
+}
+
+function renderSeeAlso(el, links) {
+  const chips = links.map(lk => `
+    <span class="see-also-chip" onclick="go('artist','${esc(lk.wl_to_slug)}')">
+      ${esc(lk.dj_name)}
+      ${serverMode && lk.wl_al_id != null
+        ? `<button class="rm" title="Remove" onclick="event.stopPropagation();removeSeeAlso(${lk.wl_al_id})">×</button>`
+        : ''}
+    </span>`).join('');
+
+  const editUI = serverMode ? `
+    <div class="see-also-add">
+      <div style="flex:1;position:relative">
+        <input class="see-also-input" id="seeAlsoQ" placeholder="Search artists to add..."
+          oninput="searchSeeAlso(this.value)" autocomplete="off">
+        <div class="see-also-drop" id="seeAlsoDrop"></div>
+      </div>
+      <label class="see-also-mutual">
+        <input type="checkbox" id="seeAlsoMutual" checked style="accent-color:var(--c3)"> Mutual
+      </label>
+      <button class="see-also-btn" id="seeAlsoAddBtn" onclick="addSeeAlso()" disabled>+ Add</button>
+    </div>` : '';
+
+  if (!links.length && !serverMode) { el.innerHTML = ''; return; }
+
+  el.innerHTML = `
+    <div class="see-also">
+      <div class="see-also-title">See Also</div>
+      <div class="see-also-links" id="seeAlsoChips">${chips || '<span style="font-size:.75rem;color:var(--text3)">None yet.</span>'}</div>
+      ${editUI}
+    </div>`;
+}
+
+let _seeAlsoTimer = null;
+function searchSeeAlso(q) {
+  _seeAlsoSelected = null;
+  document.getElementById('seeAlsoAddBtn').disabled = true;
+  clearTimeout(_seeAlsoTimer);
+  if (!q.trim()) { closeSeeAlsoDrop(); return; }
+  _seeAlsoTimer = setTimeout(async () => {
+    const r = await fetch(`/api/artists?q=${encodeURIComponent(q)}`);
+    const artists = await r.json();
+    const drop = document.getElementById('seeAlsoDrop');
+    if (!drop) return;
+    const filtered = artists.filter(a => a.dj_slug !== _seeAlsoArtistSlug);
+    if (!filtered.length) { drop.innerHTML = '<div class="see-also-opt" style="color:var(--text3)">No results</div>'; drop.classList.add('open'); return; }
+    drop.innerHTML = filtered.map(a =>
+      `<div class="see-also-opt" onclick="selectSeeAlso(${JSON.stringify(a.dj_slug)},${JSON.stringify(a.dj_name)})">
+        ${esc(a.dj_name)}<small>${(a.dj_plays||0).toLocaleString()} plays</small>
+       </div>`
+    ).join('');
+    drop.classList.add('open');
+  }, 220);
+}
+
+function selectSeeAlso(dj_slug, dj_name) {
+  _seeAlsoSelected = {dj_slug, dj_name};
+  const inp = document.getElementById('seeAlsoQ');
+  if (inp) inp.value = dj_name;
+  closeSeeAlsoDrop();
+  const btn = document.getElementById('seeAlsoAddBtn');
+  if (btn) btn.disabled = false;
+}
+
+function closeSeeAlsoDrop() {
+  const d = document.getElementById('seeAlsoDrop');
+  if (d) { d.classList.remove('open'); d.innerHTML = ''; }
+}
+
+async function addSeeAlso() {
+  if (!_seeAlsoSelected) return;
+  const mutual = document.getElementById('seeAlsoMutual')?.checked ?? true;
+  const btn    = document.getElementById('seeAlsoAddBtn');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/artist-links', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        from_slug: _seeAlsoArtistSlug,
+        to_slug:   _seeAlsoSelected.dj_slug,
+        mutual,
+      }),
+    });
+    const data = await r.json();
+    if (!data.ok && r.status !== 409) { alert(data.error); return; }
+  } catch(e) { alert('Server error'); return; }
+  const inp = document.getElementById('seeAlsoQ');
+  if (inp) inp.value = '';
+  _seeAlsoSelected = null;
+  await loadSeeAlso(_seeAlsoArtistSlug);   // reload
+}
+
+async function removeSeeAlso(linkId) {
+  await fetch(`/api/artist-links/${linkId}`, {method: 'DELETE'});
+  await loadSeeAlso(_seeAlsoArtistSlug);
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('.see-also-add')) closeSeeAlsoDrop();
+});
 
 // ================================================================
 // SONGS

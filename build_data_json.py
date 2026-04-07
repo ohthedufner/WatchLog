@@ -1,350 +1,284 @@
 """
 build_data_json.py
 ==================
-Reads preprocess.py output files and produces data.json for the web site.
-Optionally joins MusicBrainz enrichment from watchlog.db.
+Generates data.json and admin_data.json from wl.db.
 
-Usage:
-  python build_data_json.py --channels name_file.txt --videos name_title_file.txt
-  python build_data_json.py --channels name_file.txt --videos name_title_file.txt --db watchlog.db
-  python build_data_json.py --channels name_file.txt --videos name_title_file.txt --out data.json
+Sources (all from wl.db):
+  dj_*  →  artists, other_channels, recent, cat_counts, total
+  wl_*  →  songs  (wl_songs + wl_videos via wl_song_video)
+  ad_*  →  admin_data.json (stats, channel list)
+
+No longer reads flat pipe files or watchlog.db directly.
+Run build_wl_db.py first to ensure wl.db is current.
 """
 
-import argparse
 import json
 import os
 import re
 import sqlite3
-import sys
-from collections import defaultdict
 from datetime import datetime, timezone
+from collections import defaultdict
 
-DELIMITER      = "|"
-RECENT_COUNT   = 150
-MAX_VIDS_MUSIC = 500   # videos per artist (keeps JSON manageable)
-MAX_VIDS_OTHER = 100   # videos per non-music channel
+DB_PATH         = os.path.join(os.path.dirname(__file__), "wl.db")
+DATA_JSON_PATH  = os.path.join(os.path.dirname(__file__), "data.json")
+ADMIN_JSON_PATH = os.path.join(os.path.dirname(__file__), "admin_data.json")
 
+MAX_ARTIST_VIDS = 500   # videos kept per artist in JSON
+MAX_CHAN_VIDS   = 100   # videos kept per non-music channel in JSON
 
-# ===========================================================================
-# HELPERS
-# ===========================================================================
 
 def slug(s):
     return re.sub(r'[^a-z0-9]+', '-', (s or '').lower()).strip('-')
 
-def read_pipe_file(path):
-    rows = []
-    with open(path, encoding='utf-8') as f:
-        lines = f.readlines()
-    if not lines:
-        return rows
-    headers = [h.strip() for h in lines[0].split(DELIMITER)]
-    for line in lines[1:]:
-        line = line.rstrip('\n')
-        if not line:
-            continue
-        parts = line.split(DELIMITER)
-        while len(parts) < len(headers):
-            parts.append('')
-        rows.append({headers[i]: parts[i] for i in range(len(headers))})
-    return rows
 
+# ============================================================
+# data.json
+# ============================================================
 
-# ===========================================================================
-# MUSICBRAINZ ENRICHMENT LOADER
-# ===========================================================================
+def build_data(con):
+    # ── category counts & total ──────────────────────────────
+    cat_counts = {}
+    for row in con.execute("SELECT dj_category, dj_count FROM dj_cat_counts"):
+        cat_counts[row[0]] = row[1]
+    total = sum(cat_counts.values())
 
-def load_mb_data(db_path):
-    """
-    Pull MB enrichment from watchlog.db.
-    Returns (ch_mb, vid_mb) dicts keyed by channel_url and video_id.
-    Returns ({}, {}) if db not found.
-    """
-    if not db_path or not os.path.exists(db_path):
-        return {}, {}
-
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-
-    ch_mb = {}
-    for r in conn.execute(
-        "SELECT * FROM channels WHERE mb_status IN ('accepted','review')"
-    ):
-        ch_mb[r['channel_url']] = dict(r)
-
-    vid_mb = {}
-    for r in conn.execute(
-        "SELECT * FROM videos WHERE mb_status IN ('accepted','review')"
-    ):
-        vid_id = r['video_id']
-        if vid_id:
-            vid_mb[vid_id] = dict(r)
-
-    conn.close()
-    print(f"  [db] Loaded {len(ch_mb)} channel MB records, {len(vid_mb)} video MB records from {db_path}")
-    return ch_mb, vid_mb
-
-
-# ===========================================================================
-# BUILD
-# ===========================================================================
-
-def build(ch_rows, vid_rows, ch_mb, vid_mb):
-    # ── Channel index ────────────────────────────────────────────────────
-    channels = {}
-    for r in ch_rows:
-        url = r.get('channel_url', '').strip() or f"__name__{r['raw_name']}"
-        mb  = ch_mb.get(url, {})
-        channels[url] = {
-            'norm_name':   r.get('norm_name', ''),
-            'raw_name':    r.get('raw_name', ''),
-            'channel_url': url,
-            'category':    r.get('category', 'unsure'),
-            'total_plays': int(r.get('total_plays', 0) or 0),
-            'title_count': int(r.get('title_count', 0) or 0),
-            'date_first':  r.get('date_first', ''),
-            'date_last':   r.get('date_last', ''),
-            # MB artist fields
-            'mb_id':       mb.get('mb_artist_id'),
-            'mb_name':     mb.get('mb_artist_name'),
-            'mb_country':  mb.get('mb_country'),
-            'mb_type':     mb.get('mb_type'),
-            'mb_begin':    mb.get('mb_begin_date'),
-            'mb_end':      mb.get('mb_end_date'),
-            'mb_disambig': mb.get('mb_disambiguation'),
-            'mb_tags':     json.loads(mb.get('mb_tags') or '[]'),
-            'mb_conf':     mb.get('mb_confidence'),
+    # ── recent ───────────────────────────────────────────────
+    recent = []
+    for r in con.execute("""
+        SELECT dj_title, dj_video_id, dj_channel, dj_date, dj_category, dj_url
+        FROM   dj_recent
+        ORDER  BY dj_date DESC
+    """):
+        item = {
+            't':   r[0],
+            'id':  r[1] or '',
+            'ch':  r[2],
+            'ts':  r[3],
+            'cat': r[4],
+            'url': r[5],
         }
+        recent.append(item)
 
-    # ── Video catalog ────────────────────────────────────────────────────
-    # Enrich each video row with MB data if available
-    enriched_vids = []
-    for r in vid_rows:
-        url = r.get('channel_url', '').strip() or f"__name__{r['raw_name']}"
-        vid_id = r.get('video_id', '').strip()
-        mb = vid_mb.get(vid_id, {})
-        enriched_vids.append({
-            'video_id':       vid_id or None,
-            'norm_name':      r.get('norm_name', ''),
-            'raw_name':       r.get('raw_name', ''),
-            'channel_url':    url,
-            'category':       r.get('category', 'unsure'),
-            'title':          r.get('title', ''),
-            'title_url':      r.get('title_url', ''),
-            'date_first':     r.get('date_first', ''),
-            'date_last':      r.get('date_last', ''),
-            'play_count':     int(r.get('play_count', 0) or 0),
-            # Cleaned / derived (from watchlog.db if available)
-            'cleaned_title':  mb.get('cleaned_title') or r.get('title', ''),
-            'feat_artist':    mb.get('feat_artist') or '',
-            'media_type':     mb.get('media_type') or '',
-            # MB recording fields
-            'mb_recording_id':  mb.get('mb_recording_id'),
-            'mb_song_name':     mb.get('mb_song_name'),
-            'mb_artist_credit': mb.get('mb_artist_credit'),
-            'mb_release_title': mb.get('mb_release_title'),
-            'mb_release_date':  mb.get('mb_release_date'),
-            'mb_release_type':  mb.get('mb_release_type'),
-            'mb_isrc':          mb.get('mb_isrc'),
-            'mb_duration_ms':   mb.get('mb_duration_ms'),
-            'mb_confidence':    mb.get('mb_confidence'),
+    # ── see-also links index (from_slug → [{slug, name, label}]) ────
+    see_also_by_slug = defaultdict(list)
+    for r in con.execute("""
+        SELECT al.wl_from_slug, al.wl_to_slug, al.wl_label, a.dj_name
+        FROM   wl_artist_links al
+        JOIN   dj_artists a ON a.dj_slug = al.wl_to_slug
+        ORDER  BY a.dj_plays DESC
+    """):
+        see_also_by_slug[r[0]].append({
+            'slug':  r[1],
+            'name':  r[2],
+            'label': r[3],
         })
 
-    # Group by channel
-    chan_vids = defaultdict(list)
-    for v in enriched_vids:
-        chan_vids[v['channel_url']].append(v)
+    # ── artist videos index (artist_id → [compact vids]) ─────
+    av_by_artist = defaultdict(list)
+    for r in con.execute("""
+        SELECT dj_artist_id, dj_title, dj_video_id, dj_date
+        FROM   dj_artist_videos
+        ORDER  BY dj_date DESC
+    """):
+        av_by_artist[r[0]].append({'t': r[1], 'id': r[2] or '', 'ts': r[3]})
 
-    for url in chan_vids:
-        chan_vids[url].sort(key=lambda v: v['date_last'] or '', reverse=True)
-
-    # ── Compact video object for JSON ─────────────────────────────────────
-    def compact_vid(v, include_cat=False):
-        cv = {'t': v['title'], 'id': v['video_id'] or '', 'ts': v['date_last']}
-        if include_cat and v['category']:   cv['cat'] = v['category']
-        if v.get('media_type'):             cv['mt']  = v['media_type']
-        if v.get('mb_song_name'):           cv['ms']  = v['mb_song_name']
-        if v.get('mb_isrc'):                cv['isrc']= v['mb_isrc']
-        if v.get('feat_artist'):            cv['feat']= v['feat_artist']
-        if v.get('mb_release_date'):        cv['rd']  = v['mb_release_date']
-        if v.get('mb_release_type'):        cv['rt']  = v['mb_release_type']
-        return cv
-
-    # ── Artists array (music channels) ───────────────────────────────────
+    # ── artists ──────────────────────────────────────────────
     artists = []
-    for url, ch in channels.items():
-        if ch['category'] != 'music':
-            continue
-        vids = chan_vids.get(url, [])
+    for r in con.execute("""
+        SELECT dj_artist_id, dj_name, dj_slug, dj_plays, dj_latest, dj_channel_count
+        FROM   dj_artists
+        ORDER  BY dj_plays DESC
+    """):
+        aid, name, sg, plays, latest, ch_count = r
+        vids = av_by_artist.get(aid, [])[:MAX_ARTIST_VIDS]
         a = {
-            'name':          ch['norm_name'],
-            'slug':          slug(ch['norm_name']),
-            'plays':         ch['total_plays'],
-            'latest':        ch['date_last'],
-            'channel_count': 1,
-            'curl':          url,
-            'videos':        [compact_vid(v) for v in vids[:MAX_VIDS_MUSIC]],
+            'name':          name,
+            'slug':          sg or slug(name),
+            'plays':         plays or 0,
+            'latest':        latest,
+            'channel_count': ch_count or 1,
+            'videos':        vids,
         }
-        if ch.get('mb_id'):
-            a['mb_id']      = ch['mb_id']
-            a['mb_country'] = ch['mb_country']
-            a['mb_type']    = ch['mb_type']
-            a['mb_begin']   = ch['mb_begin']
-            a['mb_end']     = ch['mb_end']
-            a['mb_disambig']= ch['mb_disambig']
-            a['mb_tags']    = ch['mb_tags']
-            a['mb_conf']    = ch['mb_conf']
+        links = see_also_by_slug.get(sg or slug(name))
+        if links:
+            a['see_also'] = links
         artists.append(a)
 
-    artists.sort(key=lambda a: -(a['plays'] or 0))
+    # ── other-channel videos index (oc_id → [compact vids]) ──
+    ov_by_chan = defaultdict(list)
+    for r in con.execute("""
+        SELECT dj_oc_id, dj_title, dj_video_id, dj_date, dj_category
+        FROM   dj_other_videos
+        ORDER  BY dj_date DESC
+    """):
+        ov_by_chan[r[0]].append({
+            't':   r[1],
+            'id':  r[2] or '',
+            'ts':  r[3],
+            'cat': r[4],
+        })
 
-    # ── Other channels array ─────────────────────────────────────────────
+    # ── other channels ───────────────────────────────────────
     other_channels = []
-    for url, ch in channels.items():
-        if ch['category'] == 'music':
-            continue
-        vids = chan_vids.get(url, [])
-        c = {
-            'name':   ch['norm_name'],
-            'cat':    ch['category'],
-            'curl':   url,
-            'slug':   slug(ch['norm_name']),
-            'plays':  ch['total_plays'],
-            'latest': ch['date_last'],
-            'videos': [compact_vid(v, include_cat=True) for v in vids[:MAX_VIDS_OTHER]],
+    for r in con.execute("""
+        SELECT dj_oc_id, dj_name, dj_category, dj_channel_url, dj_slug, dj_plays, dj_latest
+        FROM   dj_other_channels
+        ORDER  BY dj_plays DESC
+    """):
+        oc_id, name, cat, curl, sg, plays, latest = r
+        vids = ov_by_chan.get(oc_id, [])[:MAX_CHAN_VIDS]
+        other_channels.append({
+            'name':   name,
+            'cat':    cat,
+            'curl':   curl,
+            'slug':   sg or slug(name),
+            'plays':  plays or 0,
+            'latest': latest,
+            'videos': vids,
+        })
+
+    # ── songs (from wl_songs + wl_videos via wl_song_video) ──
+    songs = []
+    for r in con.execute("""
+        SELECT
+            s.wl_song_id,
+            COALESCE(s.mb_song_name, s.wl_cleaned_title)  AS title,
+            s.wl_cleaned_title                             AS raw_title,
+            s.wl_artist_name                               AS artist,
+            s.wl_feat_artist                               AS feat,
+            s.mb_recording_id                              AS mb_id,
+            s.mb_confidence                                AS mb_conf,
+            SUM(v.wl_play_count)                           AS plays,
+            MAX(NULLIF(v.wl_date_last, ''))                AS latest,
+            GROUP_CONCAT(v.wl_video_id)                    AS vids_csv,
+            MAX(v.wl_media_type)                           AS mt
+        FROM wl_songs s
+        JOIN wl_song_video sv ON sv.wl_song_id = s.wl_song_id
+        JOIN wl_videos v      ON v.wl_vid_id   = sv.wl_vid_id
+        GROUP BY s.wl_song_id
+        ORDER BY plays DESC
+    """):
+        sid, title, raw_title, artist, feat, mb_id, mb_conf, plays, latest, vids_csv, mt = r
+        vids = [v for v in (vids_csv or '').split(',') if v]
+        song = {
+            'sid':   sid,
+            'title': title,
+            'artist': artist or '',
+            'aslug':  slug(artist),
+            'plays':  plays or 0,
+            'vids':   vids,
         }
-        if ch.get('mb_id'):
-            c['mb_id']      = ch['mb_id']
-            c['mb_country'] = ch['mb_country']
-            c['mb_type']    = ch['mb_type']
-            c['mb_conf']    = ch['mb_conf']
-        other_channels.append(c)
-
-    other_channels.sort(key=lambda c: -(c['plays'] or 0))
-
-    # ── Songs array (deduplicated music videos) ───────────────────────────
-    songs_map = {}   # key → song dict
-    for url, vids in chan_vids.items():
-        ch = channels.get(url, {})
-        if ch.get('category') != 'music':
-            continue
-        for v in vids:
-            key = (v.get('mb_recording_id')
-                   or f"{v['norm_name']}|||{(v.get('cleaned_title') or v['title']).lower().strip()}")
-            if key not in songs_map:
-                songs_map[key] = {
-                    'sid':       key[:80],
-                    'title':     v.get('mb_song_name') or v.get('cleaned_title') or v['title'],
-                    'raw_title': v['title'],
-                    'artist':    v['norm_name'],
-                    'aslug':     slug(v['norm_name']),
-                    'feat':      v.get('feat_artist') or '',
-                    'isrc':      v.get('mb_isrc'),
-                    'rel_date':  v.get('mb_release_date'),
-                    'rel_title': v.get('mb_release_title'),
-                    'rel_type':  v.get('mb_release_type'),
-                    'dur_ms':    v.get('mb_duration_ms'),
-                    'mt':        v.get('media_type') or '',
-                    'mb_id':     v.get('mb_recording_id'),
-                    'mb_conf':   v.get('mb_confidence'),
-                    'plays':     v['play_count'],
-                    'latest':    v['date_last'],
-                    'vids':      [v['video_id']] if v.get('video_id') else [],
-                }
-            else:
-                s = songs_map[key]
-                s['plays'] += v['play_count']
-                if (v['date_last'] or '') > (s['latest'] or ''):
-                    s['latest'] = v['date_last']
-                if v.get('video_id') and v['video_id'] not in s['vids']:
-                    s['vids'].append(v['video_id'])
-
-    songs = sorted(songs_map.values(), key=lambda s: -(s['plays'] or 0))
-
-    # ── Recent array ─────────────────────────────────────────────────────
-    all_recent = []
-    for url, vids in chan_vids.items():
-        ch = channels.get(url, {})
-        for v in vids:
-            item = {
-                't':   v['title'],
-                'id':  v['video_id'] or '',
-                'ch':  v['norm_name'],
-                'ts':  v['date_last'],
-                'cat': v['category'],
-                'url': v['title_url'],
-            }
-            if v.get('media_type'):   item['mt'] = v['media_type']
-            if v.get('mb_song_name'): item['ms'] = v['mb_song_name']
-            all_recent.append(item)
-
-    all_recent.sort(key=lambda v: v['ts'] or '', reverse=True)
-    recent = all_recent[:RECENT_COUNT]
-
-    # ── Category counts ───────────────────────────────────────────────────
-    cat_counts = defaultdict(int)
-    for v in enriched_vids:
-        cat_counts[v['category']] += v['play_count']
+        if raw_title and raw_title != title: song['raw_title'] = raw_title
+        if latest:  song['latest']  = latest
+        if feat:    song['feat']    = feat
+        if mt:      song['mt']      = mt
+        if mb_id:   song['mb_id']   = mb_id
+        if mb_conf: song['mb_conf'] = mb_conf
+        songs.append(song)
 
     return {
-        'generated':     datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-        'total':         sum(cat_counts.values()),
-        'cat_counts':    dict(cat_counts),
-        'recent':        recent,
-        'artists':       artists,
+        'generated':      datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'total':          total,
+        'cat_counts':     cat_counts,
+        'recent':         recent,
+        'artists':        artists,
         'other_channels': other_channels,
-        'songs':         songs,
+        'songs':          songs,
     }
 
 
-# ===========================================================================
-# MAIN
-# ===========================================================================
+# ============================================================
+# admin_data.json
+# ============================================================
+
+def build_admin(con):
+    # Compute stats directly from wl.db — no circular ad_stats dependency.
+    channels_music = con.execute("SELECT COUNT(*) FROM ad_channels").fetchone()[0]
+    videos_music   = con.execute("SELECT COUNT(*) FROM wl_videos").fetchone()[0]
+    videos_total   = con.execute("SELECT SUM(dj_count) FROM dj_cat_counts").fetchone()[0] or 0
+    songs_total    = con.execute("SELECT COUNT(*) FROM wl_songs").fetchone()[0]
+    songs_mb       = con.execute(
+        "SELECT COUNT(*) FROM wl_songs WHERE mb_recording_id IS NOT NULL"
+    ).fetchone()[0]
+    channels_mb    = con.execute(
+        "SELECT COUNT(*) FROM ad_channels WHERE ad_mb_status = 'accepted'"
+    ).fetchone()[0]
+    # channels_total = all channels in watch history (music + non-music)
+    channels_total = (
+        con.execute("SELECT COUNT(*) FROM ad_channels").fetchone()[0] +
+        con.execute("SELECT COUNT(*) FROM dj_other_channels").fetchone()[0]
+    )
+
+    stats = {
+        'channels_total': channels_total,
+        'channels_music': channels_music,
+        'videos_total':   videos_total,
+        'videos_music':   videos_music,
+        'songs_total':    songs_total,
+        'songs_mb':       songs_mb,
+        'channels_mb':    channels_mb,
+    }
+
+    channels = []
+    for r in con.execute("""
+        SELECT ad_url, ad_name, ad_plays, ad_mb_status,
+               ad_mb_name, ad_mb_confidence, ad_music_videos, ad_pending_videos
+        FROM   ad_channels
+        ORDER  BY ad_plays DESC
+    """):
+        url, name, plays, mb_status, mb_name, mb_conf, music_vids, pending = r
+        channels.append({
+            'url':            url,
+            'name':           name,
+            'plays':          plays or 0,
+            'mb_status':      mb_status or 'pending',
+            'mb_name':        mb_name,
+            'mb_confidence':  mb_conf,
+            'music_videos':   music_vids or 0,
+            'pending_videos': pending or 0,
+        })
+
+    return {'stats': stats, 'channels': channels}
+
+
+# ============================================================
+# main
+# ============================================================
 
 def main():
-    parser = argparse.ArgumentParser(description='Build data.json from preprocess.py output')
-    parser.add_argument('--channels', required=True, metavar='NAME_FILE',
-                        help='Path to name_file.txt')
-    parser.add_argument('--videos', required=True, metavar='VIDEO_FILE',
-                        help='Path to name_title_file.txt')
-    parser.add_argument('--db', default='watchlog.db', metavar='DB',
-                        help='Path to watchlog.db for MB enrichment (optional)')
-    parser.add_argument('--out', default='data.json',
-                        help='Output path (default: data.json)')
-    args = parser.parse_args()
+    if not os.path.exists(DB_PATH):
+        print(f"ERROR: {DB_PATH} not found — run build_wl_db.py first")
+        return
 
-    for p in (args.channels, args.videos):
-        if not os.path.exists(p):
-            print(f'ERROR: file not found: {p}')
-            sys.exit(1)
+    con = sqlite3.connect(DB_PATH)
+    try:
+        print("Building data.json from wl.db ...")
+        data = build_data(con)
+        with open(DATA_JSON_PATH, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
+        sz = os.path.getsize(DATA_JSON_PATH) // 1024
+        print(f"  Wrote {DATA_JSON_PATH} ({sz} KB)")
+        print(f"    total:          {data['total']:,}")
+        print(f"    artists:        {len(data['artists']):,}")
+        print(f"    other_channels: {len(data['other_channels']):,}")
+        print(f"    songs:          {len(data['songs']):,}")
+        print(f"    recent:         {len(data['recent']):,}")
 
-    print('Loading channels...')
-    ch_rows = read_pipe_file(args.channels)
-    print(f'  {len(ch_rows)} channels')
-
-    print('Loading videos...')
-    vid_rows = read_pipe_file(args.videos)
-    print(f'  {len(vid_rows)} videos')
-
-    print('Loading MB enrichment...')
-    ch_mb, vid_mb = load_mb_data(args.db)
-
-    print('Building data...')
-    out = build(ch_rows, vid_rows, ch_mb, vid_mb)
-
-    with open(args.out, 'w', encoding='utf-8') as f:
-        json.dump(out, f, ensure_ascii=False, separators=(',', ':'))
-
-    size_kb = os.path.getsize(args.out) // 1024
-    print(f'\nWrote {args.out} ({size_kb} KB)')
-    print(f'  total:    {out["total"]:,}')
-    print(f'  artists:  {len(out["artists"]):,}')
-    print(f'  channels: {len(out["other_channels"]):,}')
-    print(f'  songs:    {len(out["songs"]):,}')
-    print(f'  recent:   {len(out["recent"])}')
-    cats = out['cat_counts']
-    for cat in sorted(cats, key=lambda c: -cats[c]):
-        print(f'    {cat:<14} {cats[cat]:>7,}')
+        print()
+        print("Building admin_data.json from wl.db ...")
+        admin = build_admin(con)
+        with open(ADMIN_JSON_PATH, 'w', encoding='utf-8') as f:
+            json.dump(admin, f, ensure_ascii=False, separators=(',', ':'))
+        sz = os.path.getsize(ADMIN_JSON_PATH) // 1024
+        s = admin['stats']
+        print(f"  Wrote {ADMIN_JSON_PATH} ({sz} KB)")
+        print(f"    channels:  {s['channels_total']:,} total / {s['channels_music']:,} music")
+        print(f"    videos:    {s['videos_total']:,} total / {s['videos_music']:,} music")
+        print(f"    songs:     {s['songs_total']:,} total / {s['songs_mb']:,} with MB ID")
+        print(f"    channels_mb: {s['channels_mb']:,}")
+        print(f"    channels in list: {len(admin['channels']):,}")
+    finally:
+        con.close()
 
 
 if __name__ == '__main__':
