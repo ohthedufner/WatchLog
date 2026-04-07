@@ -7,8 +7,6 @@ dataset_info.txt
 
 # ── Generated database and site data ─────────────────────────────────────────
 watchlog.db
-data.json
-admin_data.json
 
 # ── Secondary pipeline output directory ──────────────────────────────────────
 html_out/
