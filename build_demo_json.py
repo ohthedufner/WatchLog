@@ -154,31 +154,28 @@ def build_demo_data(con):
         if mb_conf: song["mb_conf"] = mb_conf
         songs.append(song)
 
-    # ── recent (filter to demo artists only) ─────────────────────────────────
-    recent = []
-    demo_names_lower = set()
-    for r in con.execute(f"""
-        SELECT dj_name FROM dj_artists
-        WHERE dj_slug IN ({",".join("?" * len(DEMO_ARTIST_SLUGS))})
-    """, list(DEMO_ARTIST_SLUGS)):
-        demo_names_lower.add(r[0].lower())
-
-    for r in con.execute("""
-        SELECT dj_title, dj_video_id, dj_channel, dj_date, dj_category, dj_url
-        FROM   dj_recent
-        ORDER  BY dj_date DESC
-    """):
-        if r[2].lower() in demo_names_lower:
-            recent.append({
-                "t":   r[0],
-                "id":  r[1] or "",
-                "ch":  r[2],
-                "ts":  r[3],
-                "cat": r[4],
-                "url": r[5],
-            })
-            if len(recent) >= MAX_RECENT:
-                break
+    # ── recent (curated static list for demo) ────────────────────────────────
+    # Hand-picked top songs with confirmed video IDs, ordered for a good demo.
+    recent = [
+        {"t": "Ren - Hi Ren",                      "id": "mnbXfRACsVM", "ch": "Ren",          "ts": "2026-03-08", "cat": "Music", "url": ""},
+        {"t": "Ren - What You Want",                "id": "jrjp4Du0rEc", "ch": "Ren",          "ts": "2026-03-08", "cat": "Music", "url": ""},
+        {"t": "Gorillaz - Feel Good Inc.",          "id": "HyHNuVaZJ-k", "ch": "Gorillaz",     "ts": "2026-03-08", "cat": "Music", "url": ""},
+        {"t": "Ren - Murderer",                     "id": "hscHqw7CIFo", "ch": "Ren",          "ts": "2026-03-07", "cat": "Music", "url": ""},
+        {"t": "The Big Push - It's Alright",        "id": "CCKf6O7asss", "ch": "The Big Push", "ts": "2026-03-06", "cat": "Music", "url": ""},
+        {"t": "Gorillaz - Clint Eastwood",          "id": "1V_xRb0x9aw", "ch": "Gorillaz",     "ts": "2026-03-06", "cat": "Music", "url": ""},
+        {"t": "Ren - The Hunger",                   "id": "1T_fLytBFM4", "ch": "Ren",          "ts": "2026-03-05", "cat": "Music", "url": ""},
+        {"t": "Ren - Illest Of Our Time",           "id": "tB-JGSdBerE", "ch": "Ren",          "ts": "2026-03-04", "cat": "Music", "url": ""},
+        {"t": "The Big Push - Sympathy For The Devil", "id": "CR5FyWeuS90", "ch": "The Big Push", "ts": "2026-03-03", "cat": "Music", "url": ""},
+        {"t": "Gorillaz - DARE",                    "id": "uAOR6ib95kQ", "ch": "Gorillaz",     "ts": "2026-03-02", "cat": "Music", "url": ""},
+        {"t": "Ren - Animal Flow",                  "id": "F4mUnmFbVNg", "ch": "Ren",          "ts": "2026-03-01", "cat": "Music", "url": ""},
+        {"t": "Gorillaz - Stylo",                   "id": "nhPaWIeULKk", "ch": "Gorillaz",     "ts": "2026-02-28", "cat": "Music", "url": ""},
+        {"t": "Ren - Money Game Part 2",            "id": "jJmV1A4O1eM", "ch": "Ren",          "ts": "2026-02-27", "cat": "Music", "url": ""},
+        {"t": "The Big Push - Why My Woman?",       "id": "BsZrM4nruII", "ch": "The Big Push", "ts": "2026-02-26", "cat": "Music", "url": ""},
+        {"t": "Gorillaz - 19-2000",                 "id": "WXR-bCF5dbM", "ch": "Gorillaz",     "ts": "2026-02-25", "cat": "Music", "url": ""},
+        {"t": "Ren - Dominoes",                     "id": "bbbjWEnC3Gc", "ch": "Ren",          "ts": "2026-02-24", "cat": "Music", "url": ""},
+        {"t": "The Big Push - Girls Just Want To Have Fun", "id": "OqEHMinvxMk", "ch": "The Big Push", "ts": "2026-02-23", "cat": "Music", "url": ""},
+        {"t": "Ren - Penitence",                    "id": "R-7UHDoKlMw", "ch": "Ren",          "ts": "2026-02-22", "cat": "Music", "url": ""},
+    ]
 
     # ── cat_counts and total ─────────────────────────────────────────────────
     total_plays = sum(a["plays"] for a in artists)
