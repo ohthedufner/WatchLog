@@ -1,0 +1,112 @@
+# cleaning_rules.yaml — Curator-editable title cleaning rules
+# Used by build_watchlog_db.py
+#
+# All regex patterns use case-insensitive matching automatically.
+# Single or double quotes are optional around values.
+#
+# media_type_map: order matters — first match wins.
+
+# ---------------------------------------------------------------------------
+# Featured artist extraction
+# Each is a regex; the first capturing group is the featured artist name.
+# ---------------------------------------------------------------------------
+feat_patterns:
+  - '\(feat\.\s*([^)]+)\)'
+  - '\(ft\.\s*([^)]+)\)'
+  - '\[feat\.\s*([^\]]+)\]'
+  - '\[ft\.\s*([^\]]+)\]'
+  - '\(with\s+([^)]+)\)'
+  - '\bfeat\.\s+(.+?)(?=\s*[\(\[\|]|$)'
+  - '\bft\.\s+(.+?)(?=\s*[\(\[\|]|$)'
+
+# ---------------------------------------------------------------------------
+# Literal noise suffixes to strip from title ends
+# ---------------------------------------------------------------------------
+noise_suffix_literals:
+  - "(Official Music Video)"
+  - "(Official Video)"
+  - "(Official Audio)"
+  - "(Official Lyric Video)"
+  - "(Lyric Video)"
+  - "(Lyrics Video)"
+  - "(Lyrics)"
+  - "(Audio)"
+  - "(MV)"
+  - "(HQ)"
+  - "(HD)"
+  - "(4K)"
+  - "(Radio Edit)"
+  - "(Extended Mix)"
+  - "(Extended Version)"
+  - "(Album Version)"
+  - "(Official Live)"
+  - "(Live Performance)"
+  - "(Live Video)"
+  - "(Acoustic Version)"
+  - "(Official Acoustic)"
+  - "(Visualizer)"
+  - "(Visualiser)"
+  - "(Vertical Video)"
+  - "[Official Music Video]"
+  - "[Official Video]"
+  - "[Official Audio]"
+  - "[Official Lyric Video]"
+  - "[Lyric Video]"
+  - "[Lyrics Video]"
+  - "[Lyrics]"
+  - "[Audio]"
+  - "[MV]"
+  - "[HQ]"
+  - "[HD]"
+  - "[4K]"
+  - "| Official Video"
+  - "| Official Music Video"
+  - "| Official Audio"
+  - "| Lyric Video"
+  - "| Official Lyric Video"
+
+# ---------------------------------------------------------------------------
+# Regex noise patterns (matched anywhere in the title, after literal removal)
+# ---------------------------------------------------------------------------
+noise_regex_patterns:
+  - '\(Remastered(?:\s+\d{4})?\)'
+  - '\[Remastered(?:\s+\d{4})?\]'
+  - '\(Live\s+at\s+[^)]+\)'
+  - '\(Live\s*@\s*[^)]+\)'
+  - '\[Live\s+at\s+[^\]]+\]'
+  - '\(from\s+[^)]+\)'
+  - '\(Official\)'
+  - '\[Official\]'
+  - '\|\s*Official\b.*$'
+  - '\(Music Video\)'
+  - '\[Music Video\]'
+  - '\(\d{4}\s+(?:Remaster|Version)\)'
+
+# ---------------------------------------------------------------------------
+# Media type map: stripped-text fragment -> canonical label
+# First match wins. Fragments are matched case-insensitively against all
+# stripped text joined together.
+# ---------------------------------------------------------------------------
+media_type_map:
+  "official music video":  "Official Music Video"
+  "official lyric video":  "Official Lyric Video"
+  "lyric video":           "Official Lyric Video"
+  "lyrics video":          "Official Lyric Video"
+  "(lyrics)":              "Official Lyric Video"
+  "[lyrics]":              "Official Lyric Video"
+  "official audio":        "Official Audio"
+  "(audio)":               "Official Audio"
+  "[audio]":               "Official Audio"
+  "| official audio":      "Official Audio"
+  "official video":        "Official Video"
+  "| official video":      "Official Video"
+  "(mv)":                  "Music Video"
+  "[mv]":                  "Music Video"
+  "music video":           "Music Video"
+  "live at":               "Live"
+  "live @":                "Live"
+  "live performance":      "Live"
+  "official live":         "Live"
+  "live video":            "Live"
+  "acoustic":              "Acoustic"
+  "visualiz":              "Visualizer"

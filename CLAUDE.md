@@ -256,6 +256,163 @@ Already applied in `server.py`. Must be applied to any future backend entry poin
 
 ---
 
+## Content Scope
+
+WatchLog has two sides: **Music** and **Other**.
+
+- All active development and UI focus is on the **Music** side.
+- Non-music channels and videos are accessible only through the **admin section** — they are not shown in the main viewer.
+- This ensures edge cases (miscategorized content) can still be found and moved to music if needed.
+
+---
+
+## Artist, Video Creator, and Channel
+
+Three distinct concepts — all curator-maintained:
+
+| Concept | Field | Scope | Definition |
+|---|---|---|---|
+| **Video creator** | `norm_name` | Per channel | The person or entity that owns the channel. Every video on that channel shares the same creator. |
+| **Artist** | `wl_artist` | Per video | The musical artist that is the *subject* of the video. Set by the curator. May differ from the creator. |
+| **Channel** | `channel_url` | Per channel | The stable key for the channel. Creator is its associated person/entity. |
+
+**Examples:**
+
+| Channel | Video creator | Artist on video |
+|---|---|---|
+| Hexkind | Hexkind | Ren *(Hexkind covers multiple artists)* |
+| RenMakesMusic | Ren | Ren |
+| Trick the Fox | Trick the Fox | Trick the Fox |
+
+**Channel grouping — two cases for multi-channel artists:**
+
+1. **Intentional organization** (e.g. `RenMakesMusic`, `RenMakesStuff`) — channels are grouped under the artist page. Videos from each channel appear together on the artist page. Channels still listed separately on the Channels page.
+2. **Accidental duplicate** (e.g. `Adian347`, `ADIAN347`) — no grouping on the artist page. Both channels remain fully separate on the Channels page.
+
+**Artists without their own channel:** Valid case. An artist page can exist even if no channel maps to them directly (e.g. an artist whose content appears only on fan/cover channels).
+
+---
+
+## Content Types (`wl_content_type`)
+
+All music-side videos have a `wl_content_type` field. Values are restricted to this list:
+
+| Value | Description |
+|---|---|
+| `AUDIO_ONLY` | Audio with no video component |
+| `MUSIC_VIDEO` | Official or fan music video |
+| `LYRIC_VIDEO` | Lyrics displayed on screen |
+| `VISUALIZER` | Abstract/animated visuals, not a narrative video |
+| `MEDLEY` | One video containing all or parts of multiple songs |
+| `MUSIC_SET` | Concert or multi-song performance in one video |
+| `BTS` | Behind the scenes, associated with one video |
+| `SPOKEN` | Primarily spoken (poem, monologue); may have some music |
+| `REACTION` | Creator reacting to a song or video |
+| `BIO` | Biographical, background, or history content |
+| `CLIPS` | Fan compilations or clip collections |
+| `OTHER_XXXXXXXX` | Freeform tag (8 alphanumeric chars, e.g. `OTHER_ACOUSTIC`) |
+
+**Default assignment rules (applied at import, curator can override):**
+
+| Condition | Default `wl_content_type` |
+|---|---|
+| Imported from YouTube Music Takeout | `AUDIO_ONLY` |
+| Title contains "BTS" | `BTS` |
+| Title contains "Visualizer" | `VISUALIZER` |
+| Title contains "Lyric" | `LYRIC_VIDEO` |
+| Title contains "Poem" | `SPOKEN` |
+| Title contains "Reaction" | `REACTION` |
+| Title contains "Fan Compilation" | `CLIPS` |
+| All other music videos | `MUSIC_VIDEO` |
+
+---
+
+## Notes Fields
+
+Three curator-editable notes fields exist — one per entity type:
+
+| Table | Field | Purpose |
+|---|---|---|
+| `wl_artists` (future) | `wl_notes` | Freeform curator notes on an artist |
+| `wl_songs` | `wl_notes` | Freeform curator notes on a song |
+| `wl_videos` | `wl_notes` | Freeform curator notes on a video |
+
+Notes are plain text. No markup required. Edited in-page when `server.py` is running.
+
+---
+
+## Title Cleaning Rules File
+
+Hardcoded rules in `build_watchlog_db.py` (`NOISE_SUFFIX_LITERALS`, `NOISE_REGEX_PATTERNS`, `FEAT_PATTERNS`, `MEDIA_TYPE_MAP`) will be moved to a curator-editable **YAML file** (e.g. `cleaning_rules.yaml`).
+
+- YAML format chosen for readability and native list/map support
+- A minimal stdlib YAML parser will be written — no `PyYAML` dependency
+- The Python scripts will load this file at runtime
+
+**Example structure:**
+```yaml
+noise_suffix_literals:
+  - Official Video
+  - Official Audio
+  - HD
+
+feat_patterns:
+  - "ft."
+  - "feat."
+
+media_type_map:
+  "Official Music Video": music_video
+  "Lyric Video": lyric_video
+  "Live": live
+```
+
+---
+
+## Content / Document Management
+
+Artist bios, narrative arcs, and other long-form content are stored as **Git + Markdown files** (Option C).
+
+- Each artist has one `.md` file with YAML frontmatter for structured fields (slug, tags, channels) and free prose in the body
+- Files live in a `content/artists/` directory (and `content/songs/`, `content/channels/` as needed)
+- Renders natively on GitHub; editable in any text editor
+- A small stdlib parser extracts frontmatter at build time
+
+**Example:**
+```
+content/
+  artists/
+    ren-gill.md
+    gorillaz.md
+  songs/
+  channels/
+```
+
+```markdown
+---
+slug: ren-gill
+channels: [ren, ren-topic, renmakesstuff]
+tags: [rap, folk, spoken-word]
+---
+
+Ren Gill is a Wales-born artist based in Brighton...
+```
+
+---
+
+## Themes
+
+Three named themes (CSS variables, stored in `localStorage`):
+
+| Name | Description |
+|---|---|
+| `Neon` | Current dark neon style (legacy default) |
+| `Midnight` | New readable dark theme (future default) |
+| `Daylight` | New light theme |
+
+Theme switching requires extracting CSS to `watchlog.css` first (PLAN.md 1.4).
+
+---
+
 ## Data Structure Rules
 
 ### Raw Data is Sacred
@@ -313,4 +470,4 @@ Ren Gill and Gorillaz are hardcoded featured artists in `index.html` (biography,
 
 ---
 
-*Last updated: 2026-04-07*
+*Last updated: 2026-04-13 (evening) CDT*

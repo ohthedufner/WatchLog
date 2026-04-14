@@ -461,6 +461,7 @@ def load_watchlog_db(con):
 
 def main():
     con = sqlite3.connect(DB_PATH)
+    con.execute("PRAGMA journal_mode=WAL")
     try:
         reset_pipeline_tables(con)
         create_schema(con)

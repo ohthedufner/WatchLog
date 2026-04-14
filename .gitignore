@@ -1,5 +1,5 @@
 # ── Personal data (Google Takeout source + pipeline output) ──────────────────
-Gopogle_Takeout/
+Google_Takeout/
 name_file.txt
 name_title_file.txt
 category_review.txt
@@ -7,6 +7,9 @@ dataset_info.txt
 
 # ── Generated database and site data ─────────────────────────────────────────
 watchlog.db
+wl.db
+*.db-shm
+*.db-wal
 
 # ── Secondary pipeline output directory ──────────────────────────────────────
 html_out/
@@ -15,6 +18,17 @@ html_out/
 channel_overrides2.txt
 debug_row.txt
 New Text Document.txt
+CLAUDE-old.md
+claude.txt
+manual_editing/some_fixed.csv
+manual_editing/curator data stucture.txt
+
+# ── Browser test artifacts ────────────────────────────────────────────────────
+.playwright-mcp/
+
+# ── Local config / personal notes ────────────────────────────────────────────
+.mcp.json
+dufner_design_notes/
 
 # ── Claude session memory (not code) ─────────────────────────────────────────
 memory/

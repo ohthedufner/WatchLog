@@ -36,6 +36,76 @@ from datetime import datetime, timezone
 
 
 # ===========================================================================
+# CLEANING RULES LOADER
+# ===========================================================================
+
+_RULES_FILE = os.path.join(os.path.dirname(__file__), "cleaning_rules.yaml")
+
+
+def _unquote(s):
+    s = s.strip()
+    if len(s) >= 2 and s[0] in ('"', "'") and s[-1] == s[0]:
+        return s[1:-1]
+    return s
+
+
+def _load_cleaning_rules(path):
+    """
+    Minimal YAML loader for cleaning_rules.yaml.
+    Handles top-level string-list sections and one string-mapping section.
+    Comments and blank lines are ignored. All regex patterns compiled IGNORECASE.
+    Returns dict with keys: feat_patterns, noise_suffix_literals,
+    noise_regex_patterns, media_type_map.
+    """
+    result = {}
+    current_key = None
+    is_mapping = False
+
+    with open(path, "r", encoding="utf-8") as f:
+        for raw in f:
+            line = raw.rstrip()
+            stripped = line.lstrip()
+            if not stripped or stripped.startswith("#"):
+                continue
+
+            if not line[0].isspace():
+                # Top-level key
+                current_key = line.rstrip(": \t")
+                is_mapping = False
+                result[current_key] = None
+            elif stripped.startswith("- "):
+                # List item
+                value = _unquote(stripped[2:])
+                if result[current_key] is None:
+                    result[current_key] = []
+                result[current_key].append(value)
+            elif ":" in stripped:
+                # Mapping entry  key: value
+                idx = stripped.index(":")
+                k = _unquote(stripped[:idx])
+                v = _unquote(stripped[idx + 1:])
+                if result[current_key] is None:
+                    result[current_key] = []
+                    is_mapping = True
+                result[current_key].append((k, v))
+
+    # Compile regex lists
+    rules = {}
+    rules["feat_patterns"] = [
+        re.compile(p, re.IGNORECASE) for p in (result.get("feat_patterns") or [])
+    ]
+    rules["noise_suffix_literals"] = result.get("noise_suffix_literals") or []
+    rules["noise_regex_patterns"] = [
+        re.compile(p, re.IGNORECASE) for p in (result.get("noise_regex_patterns") or [])
+    ]
+    rules["media_type_map"] = result.get("media_type_map") or []
+    return rules
+
+
+_RULES = _load_cleaning_rules(_RULES_FILE)
+
+
+# ===========================================================================
 # CONSTANTS
 # ===========================================================================
 
@@ -227,90 +297,11 @@ def read_pipe_file(path: str) -> list[dict]:
 # TITLE CLEANING
 # ===========================================================================
 
-# Patterns for featured artist extraction
-# Each pattern: (regex, group_index)
-FEAT_PATTERNS = [
-    re.compile(r'\(feat\.\s*([^)]+)\)',   re.IGNORECASE),
-    re.compile(r'\(ft\.\s*([^)]+)\)',     re.IGNORECASE),
-    re.compile(r'\[feat\.\s*([^\]]+)\]',  re.IGNORECASE),
-    re.compile(r'\[ft\.\s*([^\]]+)\]',    re.IGNORECASE),
-    re.compile(r'\(with\s+([^)]+)\)',     re.IGNORECASE),
-    re.compile(r'\bfeat\.\s+(.+?)(?=\s*[\(\[\|]|$)', re.IGNORECASE),
-    re.compile(r'\bft\.\s+(.+?)(?=\s*[\(\[\|]|$)',   re.IGNORECASE),
-]
-
-# Noise suffixes to strip (checked as whole bracketed tokens or trailing strings)
-NOISE_SUFFIX_LITERALS = [
-    "(Official Music Video)",
-    "(Official Video)",
-    "(Official Audio)",
-    "(Official Lyric Video)",
-    "(Lyric Video)",
-    "(Lyrics Video)",
-    "(Lyrics)",
-    "(Audio)",
-    "(MV)",
-    "(HQ)",
-    "(HD)",
-    "(4K)",
-    "(Radio Edit)",
-    "(Extended Mix)",
-    "(Extended Version)",
-    "(Album Version)",
-    "(Official Live)",
-    "(Live Performance)",
-    "(Live Video)",
-    "(Acoustic Version)",
-    "(Official Acoustic)",
-    "(Visualizer)",
-    "(Visualiser)",
-    "(Vertical Video)",
-    "[Official Music Video]",
-    "[Official Video]",
-    "[Official Audio]",
-    "[Official Lyric Video]",
-    "[Lyric Video]",
-    "[Lyrics Video]",
-    "[Lyrics]",
-    "[Audio]",
-    "[MV]",
-    "[HQ]",
-    "[HD]",
-    "[4K]",
-    "| Official Video",
-    "| Official Music Video",
-    "| Official Audio",
-    "| Lyric Video",
-    "| Official Lyric Video",
-]
-
-# Map from lowercased stripped text fragment → canonical media_type value.
-# Listed highest-priority first; first match wins.
-# The key is a substring that will appear in the stripped text (lowercased).
-MEDIA_TYPE_MAP = [
-    ("official music video",  "Official Music Video"),
-    ("official lyric video",  "Official Lyric Video"),
-    ("lyric video",           "Official Lyric Video"),
-    ("lyrics video",          "Official Lyric Video"),
-    ("(lyrics)",              "Official Lyric Video"),
-    ("[lyrics]",              "Official Lyric Video"),
-    ("official audio",        "Official Audio"),
-    ("(audio)",               "Official Audio"),
-    ("[audio]",               "Official Audio"),
-    ("| official audio",      "Official Audio"),
-    ("official video",        "Official Video"),
-    ("| official video",      "Official Video"),
-    ("(mv)",                  "Music Video"),
-    ("[mv]",                  "Music Video"),
-    ("music video",           "Music Video"),
-    ("live at",               "Live"),
-    ("live @",                "Live"),
-    ("live performance",      "Live"),
-    ("official live",         "Live"),
-    ("live video",            "Live"),
-    ("acoustic",              "Acoustic"),
-    ("visualiz",              "Visualizer"),   # catches both -er and -er spellings
-]
+# Cleaning rules loaded from cleaning_rules.yaml
+FEAT_PATTERNS         = _RULES["feat_patterns"]
+NOISE_SUFFIX_LITERALS = _RULES["noise_suffix_literals"]
+NOISE_REGEX_PATTERNS  = _RULES["noise_regex_patterns"]
+MEDIA_TYPE_MAP        = _RULES["media_type_map"]
 
 
 def derive_media_type(stripped: list[dict]) -> str | None:
@@ -324,22 +315,6 @@ def derive_media_type(stripped: list[dict]) -> str | None:
             return label
     return None
 
-
-# Regex-based noise patterns (after literal removal)
-NOISE_REGEX_PATTERNS = [
-    re.compile(r'\(Remastered(?:\s+\d{4})?\)',        re.IGNORECASE),
-    re.compile(r'\[Remastered(?:\s+\d{4})?\]',        re.IGNORECASE),
-    re.compile(r'\(Live\s+at\s+[^)]+\)',              re.IGNORECASE),
-    re.compile(r'\(Live\s*@\s*[^)]+\)',               re.IGNORECASE),
-    re.compile(r'\[Live\s+at\s+[^\]]+\]',             re.IGNORECASE),
-    re.compile(r'\(from\s+[^)]+\)',                   re.IGNORECASE),
-    re.compile(r'\(Official\)',                        re.IGNORECASE),
-    re.compile(r'\[Official\]',                        re.IGNORECASE),
-    re.compile(r'\|\s*Official\b.*$',                  re.IGNORECASE),
-    re.compile(r'\(Music Video\)',                     re.IGNORECASE),
-    re.compile(r'\[Music Video\]',                     re.IGNORECASE),
-    re.compile(r'\(\d{4}\s+(?:Remaster|Version)\)',   re.IGNORECASE),
-]
 
 
 def clean_title(raw_title: str, artist_name: str) -> dict:

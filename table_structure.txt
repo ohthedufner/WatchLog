@@ -1,0 +1,80 @@
+wl.db — Table Structure
+=======================
+
+ad_channels
+  ad_ch_id          INTEGER  PK
+  ad_url            TEXT
+  ad_name           TEXT
+  ad_plays          INTEGER
+  ad_mb_status      TEXT
+  ad_mb_name        TEXT
+  ad_mb_confidence  INTEGER
+  ad_music_videos   INTEGER
+  ad_pending_videos INTEGER
+
+ad_stats
+  ad_total_channels      INTEGER
+  ad_music_channels      INTEGER
+  ad_total_videos        INTEGER
+  ad_music_videos        INTEGER
+  ad_total_songs         INTEGER
+  ad_mb_matched_channels INTEGER
+  ad_mb_matched_videos   INTEGER
+
+dj_artist_videos
+  dj_av_id     INTEGER  PK
+  dj_artist_id INTEGER  FK -> dj_artists.dj_artist_id
+  dj_title     TEXT
+  dj_video_id  TEXT
+  dj_date      TEXT
+
+dj_artists
+  dj_artist_id    INTEGER  PK
+  dj_name         TEXT
+  dj_slug         TEXT
+  dj_plays        INTEGER
+  dj_latest       TEXT
+  dj_channel_count INTEGER
+
+dj_cat_counts
+  dj_category TEXT  PK
+  dj_count    INTEGER
+
+dj_meta
+  dj_generated TEXT
+  dj_total     INTEGER
+
+dj_other_channels
+  dj_oc_id      INTEGER  PK
+  dj_name       TEXT
+  dj_category   TEXT
+  dj_channel_url TEXT
+  dj_slug       TEXT
+  dj_plays      INTEGER
+  dj_latest     TEXT
+
+dj_other_videos
+  dj_ov_id    INTEGER  PK
+  dj_oc_id    INTEGER  FK -> dj_other_channels.dj_oc_id
+  dj_title    TEXT
+  dj_video_id TEXT
+  dj_date     TEXT
+  dj_category TEXT
+
+dj_recent
+  dj_id       INTEGER  PK
+  dj_title    TEXT
+  dj_video_id TEXT
+  dj_channel  TEXT
+  dj_date     TEXT
+  dj_category TEXT
+  dj_url      TEXT
+
+wh_events
+  wh_id          INTEGER  PK
+  wh_header      TEXT
+  wh_title       TEXT
+  wh_title_url   TEXT
+  wh_channel_name TEXT
+  wh_channel_url TEXT
+  wh_time        TEXT

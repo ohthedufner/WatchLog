@@ -243,14 +243,57 @@ Decision needed before building any content sections:
 ## Open Questions / Decisions Needed
 
 1. **Multi-channel artist grouping** — How to merge Ren's channels? MB ID, rules file, or normalized name? See 3.9. Required before `channel_count` is accurate.
+## Artist Linking
+Table ARTIST_LINK
+  ID (int, increment)
+  ARTIST_1_ID
+  ARTIST_2_ID
+  RELATIONSHIP (text field)
 
-2. **Rules template format** — INI-style, YAML, or custom DSL? See 2.3. Curator-friendliness is priority.
+This could get messy since their is no dominate artist to place in ARTIST_1_ID. They carry equal weight
+Duplicates must not be allowed
+The method of displaying these is not fully worked out
 
-3. **Theme naming** — Suggestions: `Neon` (current), `Midnight`, `Daylight`?
+Here are samples:
 
-4. **Document management** — Which option (A/B/C) before content sections are built? See 5.7.
+Artist Page: Ren
+- See also:
+  - Trick the Fox
+  - Ren and Sam Thompkins
+  - The Big Push
 
-5. **Notes field** — `notes` column referenced in design but not in pipeline or DB. Where/how does the curator add notes? Admin page? Direct edit in `wl.db`?
+Artist Page: The Big Push
+- See also:
+  - Ren
+  - Romain....
+  - Goran.....
+
+## Channel Linking
+We can't expect every Artist to have a channel so:
+- Channels are on the channel  page
+- Channels will always have a channel_creator as mentioned earlier
+- Some artists wil undoubtably have a page without having their own channel. This edge case must be addresses 
+
+# Channel overrides
+ - The easiest case is if an artist has only one channel of their own
+ - There are two cases I have identified where an artist has multiple channels
+   - They have done this for better organition of their content
+     - Tn this case, each can move to the artist page and used to group videos under their artist page. The separtate channels no longer need to be treated as separate artists.  THE CHANNELS WILL STILL BE LISTED SEPARATELY ON THE CHANNEL PAGE
+     - Example: RenMakesStuff, RenMakesMusic
+    -The artist seems to have created a second channel for no apparent reason. The channel however does exist. In YouTube Takeout. The CHANNEL WILL REMAIN SEPARATE ON THE CHANNEL PAGE. On the artist page, there will be no grouping based on channel.
+      - Example: Adian347, ADIAN347
+
+
+1. **Rules template format** — INI-style, YAML, or custom DSL? See 2.3. Curator-friendliness is priority.
+  ** Explain in more detail. I have worked with INI files and YAML but small example of each will be helpful do decide
+1. **Theme naming** — Suggestions: `Neon` (current), `Midnight`, `Daylight`?
+   ** Themes> Current im neon. Adopt Midnight and Daylight. Good choices
+
+2. **Document management** — Which option (A/B/C) before content sections are built? See 5.7.
+3. A or C. Explain these options further
+
+4. **Notes field** — `notes` column referenced in design but not in pipeline or DB. Where/how does the curator add notes? Admin page? Direct edit in `wl.db`?
+  ** Notes for artist, song and channel for now.
 
 ---
 
@@ -265,6 +308,157 @@ Decision needed before building any content sections:
 | `ARTIST_META` in `index.html` | Ren + Gorillaz bios hardcoded in JS — third featured artist requires externalizing first |
 | WAL mode | Set per-connection via PRAGMA in `server.py`; not set at DB creation in `build_wl_db.py` (4.2) |
 | `notes` field | In design; not in pipeline, DB, or site yet |
+
+## CLARiFICATION ON ARTISTS, TITLES CHANNELS
+
+# General
+A more clear deniniton of music / Other needs to be made.
+There are two sides to theis system Music and Other
+videos and channels not marked at music must be accessible to catch edge cases that need to move to music section
+Focus will be on music related content until further notice
+The section for non-music (other) channels and videos will now only be visible and available in the adimin section
+
+# *Artist, Video creator and channel
+Until now, the artist and video creator are now two fields, They will be maintained by the human currator.
+video creator (the norm_name) will ve associated with the channel as the channel will be considered their creation
+Artist will be changed on a per-video basis by the curator to specify the artist that is the subject of the video.
+
+Examples:
+  Video_creator: Hexkind (this is the norm_name for the channel and every video in on this channel)
+  Artist: Ren (Hexkind creates videos associated with multiple artists. Many of them are Ren.
+
+  Video_creator: Ren (channel : RenMakesMusic
+  Artist : Ren
+
+  Video_creator: Trick the Fox (name assocciated with the channel)
+  Artist: Trick the Fpx (Artist of the video)
+
+# Videos, songs and other types of music content
+This pertains the the music side of Watchlog only.
+*NOT ALL VIDEOS IN THE MUSIC SECTION OF WATCHLOG ARE ACTUALLY VIDEOS
+The CONTENT_TYPE  will be filled with defaul values as shown below after the iist of types below
+Often these will have to be tagged by the curator of the dataase
+
+# CONTENT_TYPE will be restricted to the short list below.
+To handle edge cases that irriate the curator, there will an option "Other - "
+  Upon selection of "Other - " a field must be activated to add an 8 character alphanumeric tag.
+  This will be saved and displayed as " 
+
+# CONTENT_TYPE options available
+  AUDIO ONLY 
+  MUSIC VIDEO
+  LYRIC VIDEO
+  VISUALIZER
+  MEDLEY (considered one song but uses all or parts of other songS)
+  MUSIC SET (a concert or multiple songs contained in one video)
+  BTS - Behind the sceens (this is associdated with one video)
+  SPOKEN - Primarily spoken like a poem. May have some music as well
+  REACTION - Creators of reaction videos to songs
+  BIO - Biographic, background or history
+  CLIPS - usually craeations compilied on other fan sites
+  OTHER - 
+  
+# Default CONTENT_TYPE
+AUDIO ONLY - default for content impported from YouTube Music takeout files
+MUSIC VIDEO will be the default for others uness these key works are found in the YouTube Title
+- BTS
+- Visualizer
+- Poem ( content_type: SPOKEN)
+- Reaction
+- Lyric
+- Fan Compilationm
+  
+* suggestings for other default filers here will be helpful
+
+
+
+
+
+---
+
+## Bugs & Fixes
+*Logged: 2026-04-14 — from full Playwright browser test of http://localhost:8000*
+
+---
+
+### BUG-01 🔴 Home — "Music Plays" stat card always shows 0
+**What failed:** The "Music Plays" stat card on the home page displays `0` regardless of actual play counts (Ren alone has 1,549).
+**Why it failed:** `watchlog.js:217` reads `cc.music` (lowercase). `data.json` stores the key as `'Music'` (capital M). JavaScript object key lookup is case-sensitive — `cc.music` is always `undefined`, which falls back to `0`.
+**Recommended fix:** In `watchlog.js`, change `cc.music||0` → `cc['Music']||0`. Or normalize keys to lowercase in `build_data_json.py` when writing `cat_counts`.
+
+---
+
+### BUG-02 🔴 Home — "Other" stat card always shows 0
+**What failed:** The "Other" stat card displays `0`.
+**Why it failed:** `watchlog.js:220` sums `cc.tv + cc.tech + cc.food + cc.comedy + cc.gaming` — six hardcoded lowercase keys. The actual `cat_counts` in `data.json` only ever has `{'Music': 3904}` — none of those keys exist.
+**Recommended fix:** Replace the hardcoded sum with a dynamic sum of all non-Music keys: `Object.entries(cc).filter(([k])=>k!=='Music').reduce((s,[,v])=>s+v, 0)`.
+
+---
+
+### BUG-03 🔴 Channels page — completely empty ("No channels found")
+**What failed:** The Channels page renders with no data. The category tab shows only "ALL" and the grid shows `No channels found`.
+**Why it failed:** `watchlog.js:79` populates the channel list from `DB.other_channels`, which maps to `data.json`'s `other_channels` key. That key is populated by `build_data_json.py` from the `dj_other_channels` table — which contains *non-music* channels only. Per the current design, non-music channels are excluded from the main viewer. Since all 3,904 watch events are categorized as Music, `dj_other_channels` has 0 rows.
+**Consequence:** The "Total Watches" stat card (which `onclick` routes to `#channels`) and the "All channels →" button on the home page both lead to an empty page.
+**Recommended fix:** This is a design decision. Two options:
+- A) Repurpose the Channels page to show music artist channels (derived from `dj_artists[].channels`). Requires restructuring how channels are surfaced in `data.json` and the JS.
+- B) Remove the Channels nav link and stat card routing until channel data is available. Replace "All channels →" with "All artists →".
+Option B is the faster fix. Option A aligns better with the intended feature.
+
+---
+
+### BUG-04 🟡 Song detail — raw YouTube ID displayed as video title
+**What failed:** On the "What You Want" song detail page (`#song/ren/what-you-want`), one of the three source videos shows the raw YouTube ID `08m3rcDA4tw` as its title instead of a human-readable title.
+**Why it failed:** This video has no title stored in `wl_videos` (the title field is NULL or empty — likely a deleted or unavailable video that was never resolved). The display code renders whatever is in the title field with no fallback.
+**Recommended fix:** In `build_data_json.py` or the JS rendering code, fall back to `[Unavailable]` (or similar) when `wl_title` is NULL or is a raw YouTube ID (matches `^[A-Za-z0-9_-]{11}$`).
+
+---
+
+### BUG-05 🟡 Songs — "Stylo (Labrinth Remix" split incorrectly: closing paren in artist field
+**What failed:** The song titled `Stylo (Labrinth Remix` appears with artist `Gorillaz ft. Tinie Tempah)`. The closing parenthesis ended up in the artist field instead of the title.
+**Why it failed:** The title-cleaning regex in `build_watchlog_db.py` extracted the featured artist from inside a parenthetical but split incorrectly — the `)` boundary was consumed by the feat-artist extraction pattern, stripping it from the title without appending it back.
+**Recommended fix:** Review `FEAT_PATTERNS` regex in `build_watchlog_db.py`. After extracting a feat artist from a parenthetical group, ensure the remainder of that group (including the closing `)` and any trailing text) is either retained in `cleaned_title` or discarded cleanly — not left as a dangling character on the artist string.
+
+---
+
+### BUG-06 🟡 Songs — "Ren" appears as song title (from "Ren Ft. Kit - Slaughter House")
+**What failed:** A song row titled `Ren` with artist `Ren ft. Kit - Slaughter House` appears in the Songs grid. The song title should be `Slaughter House` and the artist `Ren ft. Kit`.
+**Why it failed:** The artist-prefix stripping in `build_watchlog_db.py` removed `Ren Ft. Kit - ` from the front of the title but then stored the remainder `Slaughter House` under the title field — however, what was left as the `cleaned_title` was only `Ren` (the prefix before `Ft.`), not the post-dash token.
+**Recommended fix:** When stripping an `artist - song` prefix with a `Ft.` in the artist portion, the song title should be the text *after* the final ` - ` separator, not before it.
+
+---
+
+### BUG-07 🟡 Songs — "Ren & Sam Tompkins - Blind Eyed" not cleaned from title
+**What failed:** A song titled `Ren & Sam Tompkins - Blind Eyed` appears with artist `Ren ft. Angry Car Park Attendant`. The artist prefix `Ren & Sam Tompkins` was not stripped from the title.
+**Why it failed:** The artist-prefix stripping regex handles `Artist - Song` and `Artist ft. X - Song` patterns, but not `Artist & CoArtist - Song` — an ampersand-joined dual-artist prefix that doesn't contain `ft.`/`feat.`.
+**Recommended fix:** Add an ampersand-joined dual-artist prefix pattern to `FEAT_PATTERNS` or the prefix-stripping step: detect `[Name] & [Name] - ` as a strippable prefix and extract both artists as the primary/feat artists.
+
+---
+
+### BUG-08 🟢 Songs — "Love Music, Pt. 4" and "Love Music, Part 4" appear as separate songs
+**What failed:** Two distinct song rows exist: `Love Music, Pt. 4` and `Love Music, Part 4`, both by Ren. These are the same song.
+**Why it failed:** The title normalization step does not treat `Pt.` and `Part` as equivalent strings during deduplication. The `wl_songs` deduplication key is `(normalized_title, normalized_artist)`, and these two forms produce different normalized strings.
+**Recommended fix:** Add `Pt.` → `Part` (or vice versa) to the title normalization step before computing the deduplication key in `build_watchlog_db.py`.
+
+---
+
+### BUG-09 🟢 Songs — "Release Year" sort has no effect (same order as Most Played)
+**What failed:** Selecting "Release Year" in the sort dropdown on the Songs page produces the same ordering as "Most Played".
+**Why it failed:** This is a data gap, not a code bug. All `wl_songs` rows have NULL release year because MB recording enrichment has not been run (0 MB recording matches). When all sort keys are NULL/0, the sort falls back to insertion order, which happens to match play count order.
+**Recommended fix:** No code fix needed — this resolves when MB recording enrichment runs (Phase 5.3). Optionally, display a subtle UI note on the sort dropdown when year data is sparse: e.g., `Release Year (limited data)`.
+
+---
+
+### BUG-10 🟢 Nav search bar — retains previous query across page navigations
+**What failed:** After using an affiliate chip search (e.g., clicking "The Big Push" on Ren's page), the nav search bar displays `The Big Push` on all subsequent page visits, including the Home and Songs pages.
+**Why it failed:** The `searchAffil()` function sets the nav search input value to trigger a search result, but never clears it afterward. The nav bar input value persists in the DOM.
+**Recommended fix:** In `searchAffil()`, after navigating to `#search`, clear the input value (or reset it after a short delay): `document.getElementById('navSearch').value = ''`. Alternatively, clear the input when navigating away from `#search`.
+
+---
+
+### BUG-11 ⚪ favicon.ico missing (404 on every page load)
+**What failed:** Every page load logs `404 NOT FOUND` for `http://localhost:8000/favicon.ico`.
+**Why it failed:** No `favicon.ico` file exists in the project root.
+**Recommended fix:** Add a `favicon.ico` (or `<link rel="icon" href="...">` in `index.html` pointing to a PNG). Low priority.
 
 ---
 
