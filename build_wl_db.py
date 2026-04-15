@@ -214,6 +214,15 @@ def create_schema(con):
         wl_label        TEXT NOT NULL DEFAULT 'See also',
         UNIQUE(wl_from_slug, wl_to_slug)
     );
+
+    -- Curator-assigned channel categories.
+    -- Overrides the category assigned by the pipeline for dj_other_channels.
+    -- Written by the admin UI; applied after dj_other_channels is rebuilt.
+    CREATE TABLE IF NOT EXISTS wl_channel_cats (
+        wl_cc_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        wl_channel_url  TEXT NOT NULL UNIQUE,
+        wl_category     TEXT NOT NULL
+    );
     """)
     con.commit()
 
@@ -467,6 +476,15 @@ def main():
         create_schema(con)
         load_watch_history(con)
         load_data_json(con)
+        # Apply curator category overrides (wl_channel_cats survives rebuild)
+        overrides = con.execute(
+            "UPDATE dj_other_channels "
+            "SET dj_category = (SELECT wl_category FROM wl_channel_cats WHERE wl_channel_url = dj_channel_url) "
+            "WHERE dj_channel_url IN (SELECT wl_channel_url FROM wl_channel_cats)"
+        ).rowcount
+        if overrides:
+            con.commit()
+            print(f"  Applied {overrides} channel category overrides from wl_channel_cats")
         load_admin_data(con)
         load_watchlog_db(con)
         print("\nDone. Tables in wl.db:")

@@ -4,13 +4,47 @@
 let DB = null;
 let serverMode = false;   // true when local Flask server is running
 
-const artistSt = { list:[], filtered:[], sort:'plays', q:'', page:0, per:48 };
-const chanSt   = { list:[], filtered:[], cat:'all',   q:'', page:0, per:40 };
-const songSt   = { list:[], filtered:[], sort:'plays', q:'', qa:'', page:0, per:48 };
+const artistSt = { list:[], filtered:[], sort:'plays', q:'', page:0, per:60, alpha:'All' };
+const chanSt   = { list:[], filtered:[], cat:'all', sort:'plays', q:'', page:0, per:60, alpha:'All' };
+const songSt   = { list:[], filtered:[], sort:'az',    q:'', qa:'', page:0, per:60, alpha:'All' };
+
+// ================================================================
+// ALPHABET FILTER
+// ================================================================
+const ALPHA_GROUPS = ['All','#','A','B','C','D','E','F','G','H','I','J','K','L','M',
+                      'N','O','P','Q','R','S','T','U','V','W','XYZ'];
+
+function alphaKey(name) {
+  // Strip any leading non-alpha chars (e.g. "[unknown]" → U, "2-D" → #)
+  const raw = (name || '').replace(/^[^a-zA-Z0-9]*/, '');
+  const c = raw.charAt(0).toUpperCase();
+  if (!c || /[0-9]/.test(c)) return '#';
+  if (!'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.includes(c)) return '#';
+  if ('XYZ'.includes(c)) return 'XYZ';
+  return c;
+}
+
+function alphaMatch(name, alpha) {
+  if (alpha === 'All') return true;
+  return alphaKey(name) === alpha;
+}
+
+function buildAlphaBar(barId, st, setFn) {
+  const el = document.getElementById(barId);
+  if (!el) return;
+  el.innerHTML = ALPHA_GROUPS.map(a =>
+    `<button class="alpha-btn${st.alpha===a?' active':''}" onclick="${setFn}('${a}')">${a}</button>`
+  ).join('');
+}
+
+function setArtistAlpha(a) { artistSt.alpha=a; artistSt.page=0; buildAlphaBar('artistAlpha',artistSt,'setArtistAlpha'); applyArtistFilter(); }
+function setSongAlpha(a)   { songSt.alpha=a;   songSt.page=0;  buildAlphaBar('songAlpha',  songSt,  'setSongAlpha');   applySongFilter();  }
+function setChanAlpha(a)   { chanSt.alpha=a;   chanSt.page=0;  buildAlphaBar('chanAlpha',  chanSt,  'setChanAlpha');   applyChans();       }
 
 let curArtist = null, artVidPage = 0;
 let curChan   = null, chanVidPage = 0;
 let curSong   = null;
+let adminMode = localStorage.getItem('wl_admin_mode') === 'on';
 
 // ================================================================
 // PLAYER MODE
@@ -76,11 +110,14 @@ async function boot() {
     document.getElementById('loading').style.display = 'none';
     artistSt.list = (DB.artists || []).slice();
     artistSt.filtered = artistSt.list.slice();
-    chanSt.list = (DB.other_channels || []).slice();
+    chanSt.list = (DB.channels || []).slice();
     chanSt.filtered = chanSt.list.slice();
     songSt.list = (DB.songs || []).slice();
     songSt.filtered = songSt.list.slice();
     buildCatTabs();
+    buildAlphaBar('artistAlpha', artistSt, 'setArtistAlpha');
+    buildAlphaBar('songAlpha',   songSt,   'setSongAlpha');
+    buildAlphaBar('chanAlpha',   chanSt,   'setChanAlpha');
     renderHome();
     renderArtistGrid();
     renderChanGrid();
@@ -217,7 +254,7 @@ function renderHome(){
     <div class="stat-card" onclick="go('artists')"><div class="stat-num">${(cc.music||0).toLocaleString()}</div><div class="stat-label">Music Plays</div></div>
     <div class="stat-card" onclick="go('artists')"><div class="stat-num">${(DB.artists||[]).length.toLocaleString()}</div><div class="stat-label">Artists</div></div>
     <div class="stat-card" onclick="go('songs')"><div class="stat-num">${songs.length.toLocaleString()}</div><div class="stat-label">Songs</div></div>
-    <div class="stat-card" onclick="go('channels')"><div class="stat-num">${((cc.tv||0)+(cc.tech||0)+(cc.food||0)+(cc.comedy||0)+(cc.gaming||0)).toLocaleString()}</div><div class="stat-label">Other</div></div>`;
+    <div class="stat-card" onclick="go('channels')"><div class="stat-num">${Object.entries(cc).filter(([k])=>k!=='music').reduce((s,[,v])=>s+v,0).toLocaleString()}</div><div class="stat-label">Other</div></div>`;
 
   document.getElementById('homeRecent').innerHTML = (DB.recent||[]).slice(0,18).map(v=>videoItem(v,true)).join('');
 
@@ -254,6 +291,7 @@ function goArtistPage(p) { artistSt.page=p; renderArtistGrid(); scrollTo(0,0); }
 function applyArtistFilter(){
   let list = artistSt.list.filter(a=>a.name!=='[unknown]');
   if(artistSt.q) list=list.filter(a=>a.name.toLowerCase().includes(artistSt.q));
+  if(artistSt.alpha!=='All') list=list.filter(a=>alphaMatch(a.name, artistSt.alpha));
   if(artistSt.sort==='az')     list.sort((a,b)=>a.name.localeCompare(b.name));
   else if(artistSt.sort==='recent') list.sort((a,b)=>(b.latest||'').localeCompare(a.latest||''));
   else list.sort((a,b)=>(b.plays||0)-(a.plays||0));
@@ -268,12 +306,17 @@ function renderArtistGrid(){
   document.getElementById('artistGrid').innerHTML = items.map(a=>{
     const s=slug(a.name);
     const feat=FEATURED.has(s);
-    return `<div class="artist-card" onclick="go('artist','${s}')">
-      ${feat?'<div class="featured-badge">Featured</div>':''}
-      <div class="artist-name">${esc(a.name)}</div>
-      <div class="artist-count">${(a.plays||0).toLocaleString()} plays</div>
-      <div class="artist-since">${ago(a.latest)}</div>
-      ${a.mb_country||a.mb_type ? `<div class="artist-mb-line">${[a.mb_country,a.mb_type].filter(Boolean).join(' · ')}</div>` : ''}
+    const sub=[a.mb_country,a.mb_type].filter(Boolean).join(' · ');
+    return `<div class="list-row" onclick="go('artist','${s}')">
+      <div class="list-row-name">
+        ${feat?'<span class="featured-badge" style="margin-right:.5rem;font-size:.5rem">Featured</span>':''}
+        ${esc(a.name)}
+      </div>
+      ${sub ? `<div class="list-row-sub">${esc(sub)}</div>` : ''}
+      <div class="list-row-meta">
+        <span>${(a.plays||0).toLocaleString()} plays</span>
+        <span style="color:var(--text3)">${ago(a.latest)}</span>
+      </div>
     </div>`;
   }).join('');
   renderPag('artistPag', artistSt.filtered.length, artistSt.page, artistSt.per, 'goArtistPage');
@@ -357,15 +400,88 @@ function renderArtistDetail(s){
   document.getElementById('artistExtra').innerHTML = extra;
   document.getElementById('artistVidCount').textContent = artist.videos.length + ' videos';
   loadSeeAlso(artist.slug || slug(artist.name));
+  renderAdminUnknownPanel();
   renderArtistVids();
 }
 
 function renderArtistVids(){
-  const per=20, page=paginate(curArtist.videos, artVidPage, per);
+  const sorted = (curArtist.videos||[]).slice().sort((a,b)=>(a.t||'').localeCompare(b.t||''));
+  const per=20, page=paginate(sorted, artVidPage, per);
   document.getElementById('artistVids').innerHTML = page.map(v=>videoItem(v)).join('');
-  renderPag('artistVidPag', curArtist.videos.length, artVidPage, per, 'goArtVidPage');
+  renderPag('artistVidPag', sorted.length, artVidPage, per, 'goArtVidPage');
 }
 function goArtVidPage(p){ artVidPage=p; renderArtistVids(); }
+
+// ================================================================
+// ADMIN — UNKNOWN CHANNEL CATEGORIZATION
+// ================================================================
+const ADMIN_CATS = ['music','news','tech','gaming','comedy','food','tv','other'];
+
+async function renderAdminUnknownPanel() {
+  const el = document.getElementById('adminUnknownPanel');
+  if (!el) return;
+  el.innerHTML = '';
+  if (!adminMode || !serverMode) return;
+  if (!curArtist || curArtist.slug !== 'unknown') return;
+
+  el.innerHTML = `<div style="padding:.75rem 1.25rem;font-family:'Space Mono',monospace;font-size:.65rem;color:var(--text3)">Loading unsorted channels...</div>`;
+  try {
+    const r = await fetch('/api/unknown-channels');
+    const channels = await r.json();
+    if (!channels.length) { el.innerHTML = ''; return; }
+    _renderUnknownChannelList(el, channels);
+  } catch(e) { el.innerHTML = ''; }
+}
+
+function _renderUnknownChannelList(el, channels) {
+  const rows = channels.map((ch, i) => `
+    <div class="admin-ch-row" id="admin-ch-row-${i}" data-url="${esc(ch.dj_channel_url)}">
+      <select class="admin-cat-select" id="admin-cat-${i}">
+        <option value="">— pick category —</option>
+        ${ADMIN_CATS.map(c=>`<option value="${c}">${c}</option>`).join('')}
+      </select>
+      <button class="admin-confirm-btn" onclick="confirmChannelCat(${JSON.stringify(ch.dj_channel_url)},${i})">Confirm</button>
+      <div class="admin-ch-name" title="${esc(ch.dj_channel_url)}">${esc(ch.dj_name)}</div>
+      <div class="admin-ch-plays">${(ch.dj_plays||0).toLocaleString()} plays</div>
+    </div>`).join('');
+
+  el.innerHTML = `
+    <div class="admin-panel">
+      <div class="admin-panel-header">
+        <span class="admin-panel-title">Categorize Channels</span>
+        <span class="admin-panel-count" id="adminChCount">${channels.length} unsorted</span>
+      </div>
+      ${rows}
+    </div>`;
+}
+
+async function confirmChannelCat(url, idx) {
+  const sel = document.getElementById('admin-cat-' + idx);
+  if (!sel || !sel.value) return;
+  const btn = sel.nextElementSibling;
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+
+  try {
+    const r = await fetch('/api/channel-category', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({channel_url: url, category: sel.value}),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      const row = document.getElementById('admin-ch-row-' + idx);
+      if (row) row.remove();
+      const remaining = document.querySelectorAll('[id^="admin-ch-row-"]').length;
+      const countEl = document.getElementById('adminChCount');
+      if (countEl) countEl.textContent = remaining + ' unsorted';
+      if (!remaining) document.getElementById('adminUnknownPanel').innerHTML = '';
+    } else {
+      if (btn) { btn.disabled = false; btn.textContent = 'Confirm'; }
+    }
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirm'; }
+  }
+}
 
 function searchAffil(name){
   document.getElementById('searchInput').value = name;
@@ -518,7 +634,9 @@ function applySongFilter(){
   let list = songSt.list.filter(s=>s.title);
   if(songSt.q)  list=list.filter(s=>(s.title||'').toLowerCase().includes(songSt.q));
   if(songSt.qa) list=list.filter(s=>(s.artist||'').toLowerCase().includes(songSt.qa));
-  if(songSt.sort==='az')     list.sort((a,b)=>(a.title||'').localeCompare(b.title||''));
+  if(songSt.alpha!=='All') list=list.filter(s=>alphaMatch(s.title, songSt.alpha));
+  if(songSt.sort==='az')       list.sort((a,b)=>(a.title||'').localeCompare(b.title||''));
+  else if(songSt.sort==='artist') list.sort((a,b)=>(a.artist||'').localeCompare(b.artist||'') || (a.title||'').localeCompare(b.title||''));
   else if(songSt.sort==='recent') list.sort((a,b)=>(b.latest||'').localeCompare(a.latest||''));
   else if(songSt.sort==='year')   list.sort((a,b)=>(b.rel_date||'').localeCompare(a.rel_date||''));
   else list.sort((a,b)=>(b.plays||0)-(a.plays||0));
@@ -527,24 +645,22 @@ function applySongFilter(){
 
 function renderSongGrid(){
   if(!DB.songs||!DB.songs.length){
-    document.getElementById('songGrid').innerHTML=`<div class="empty" style="grid-column:1/-1">No song data yet — run the pipeline with watchlog.db to generate song records.</div>`;
+    document.getElementById('songGrid').innerHTML=`<div class="empty">No song data yet — run the pipeline with watchlog.db to generate song records.</div>`;
     return;
   }
   const items = paginate(songSt.filtered, songSt.page, songSt.per);
-  if(!items.length){ document.getElementById('songGrid').innerHTML='<div class="empty" style="grid-column:1/-1">No songs found</div>'; return; }
+  if(!items.length){ document.getElementById('songGrid').innerHTML='<div class="empty">No songs found</div>'; return; }
   document.getElementById('songGrid').innerHTML = items.map(s=>{
     const yr = s.rel_date ? s.rel_date.slice(0,4) : '';
     const key = slug(s.artist)+'/'+slug(s.title);
-    return `<div class="song-card" onclick="go('song','${key}')">
-      <div class="song-title" title="${esc(s.raw_title||s.title)}">${esc(s.title)}</div>
-      <div class="song-artist">${esc(s.artist)}${s.feat?` ft. ${esc(s.feat)}`:''}</div>
-      <div class="song-meta">
+    return `<div class="list-row" onclick="go('song','${key}')">
+      <div class="list-row-name" title="${esc(s.raw_title||s.title)}">${esc(s.title)}</div>
+      <div class="list-row-artist">${esc(s.artist)}${s.feat?`<span style="color:var(--text3)"> ft. ${esc(s.feat)}</span>`:''}</div>
+      <div class="list-row-meta">
         <span>${(s.plays||0).toLocaleString()} plays</span>
-        ${yr ? `<span>${yr}</span>` : ''}
-        ${s.rel_type ? `<span>${esc(s.rel_type)}</span>` : ''}
+        ${yr ? `<span style="color:var(--text3)">${yr}</span>` : ''}
         ${s.mt ? mtBadge(s.mt) : ''}
       </div>
-      ${s.isrc ? `<div class="song-isrc">ISRC ${esc(s.isrc)}</div>` : ''}
     </div>`;
   }).join('');
   renderPag('songPag', songSt.filtered.length, songSt.page, songSt.per, 'goSongPage');
@@ -636,6 +752,7 @@ function setCat(cat){
 }
 
 function filterChans(q){ chanSt.q=q.toLowerCase(); chanSt.page=0; applyChans(); }
+function sortChans(s)  { chanSt.sort=s; applyChans(); }
 function goChPage(p)    { chanSt.page=p; renderChanGrid(); }
 function goChanVidPage(p){ chanVidPage=p; renderChanVids(); }
 
@@ -643,31 +760,40 @@ function applyChans(){
   let list = chanSt.list.slice();
   if(chanSt.cat!=='all') list=list.filter(c=>c.cat===chanSt.cat);
   if(chanSt.q) list=list.filter(c=>c.name.toLowerCase().includes(chanSt.q));
+  if(chanSt.alpha!=='All') list=list.filter(c=>alphaMatch(c.name, chanSt.alpha));
+  if(chanSt.sort==='az') list.sort((a,b)=>a.name.localeCompare(b.name));
+  else list.sort((a,b)=>(b.plays||0)-(a.plays||0));
   chanSt.filtered=list; chanSt.page=0; renderChanGrid();
 }
 
 function renderChanGrid(){
   const items=paginate(chanSt.filtered, chanSt.page, chanSt.per);
-  if(!items.length){ document.getElementById('chanGrid').innerHTML='<div class="empty" style="grid-column:1/-1">No channels found</div>'; return; }
+  const grid = document.getElementById('chanGrid');
+  if(!items.length){ grid.innerHTML='<div class="empty">No channels found</div>'; return; }
   let header='';
   if(chanSt.cat==='unsure'){
-    header=`<div class="mystery-header" style="grid-column:1/-1">
+    header=`<div class="mystery-header">
       <div class="mystery-skull">&#128128;</div>
       <div><div class="mystery-title">Mystery Links</div>
       <div class="mystery-sub">Watch at your own risk. Contents unknown. Proceed with curiosity.</div></div>
     </div>`;
   }
-  document.getElementById('chanGrid').innerHTML = header + items.map(ch=>`
-    <div class="channel-card" onclick="go('channel','${slug(ch.name)}')">
-      <div class="channel-name" title="${esc(ch.name)}">${esc(ch.name)}</div>
-      <div class="channel-plays">${(ch.plays||0).toLocaleString()} plays ${badge(ch.cat)}</div>
-      ${ch.mb_country||ch.mb_type ? `<div style="font-family:'Space Mono',monospace;font-size:.55rem;color:var(--c2);margin-top:.2rem">${[ch.mb_country,ch.mb_type].filter(Boolean).join(' · ')}</div>` : ''}
-    </div>`).join('');
+  grid.innerHTML = header + items.map(ch=>{
+    const sub=[ch.mb_country,ch.mb_type].filter(Boolean).join(' · ');
+    return `<div class="list-row" onclick="go('channel','${slug(ch.name)}')">
+      <div class="list-row-name" title="${esc(ch.name)}">${esc(ch.name)}</div>
+      ${sub ? `<div class="list-row-sub">${esc(sub)}</div>` : ''}
+      <div class="list-row-meta">
+        ${ch.cat ? badge(ch.cat) : ''}
+        <span>${(ch.plays||0).toLocaleString()} plays</span>
+      </div>
+    </div>`;
+  }).join('');
   renderPag('chanPag', chanSt.filtered.length, chanSt.page, chanSt.per, 'goChPage');
 }
 
 function renderChanDetail(s){
-  const ch = DB.other_channels.find(c=>slug(c.name)===s);
+  const ch = (DB.channels||[]).find(c=>slug(c.name)===s);
   if(!ch){ document.getElementById('chanHero').innerHTML='<div class="empty">Channel not found</div>'; return; }
   curChan=ch; chanVidPage=0;
   document.getElementById('chanHero').innerHTML=`
@@ -679,10 +805,11 @@ function renderChanDetail(s){
           <div class="artist-hero-stats">
             <span><span class="hl" style="color:var(--c2)">${(ch.plays||0).toLocaleString()}</span> plays</span>
             <span>Last watched <span class="hl" style="color:var(--c2)">${ago(ch.latest)}</span></span>
-            ${badge(ch.cat)}
+            ${ch.cat ? badge(ch.cat) : ''}
           </div>
-          ${ch.mb_id ? `
+          ${(ch.mb_name||ch.mb_country||ch.mb_type) ? `
           <div class="mb-chips">
+            ${ch.mb_name    ? `<span class="mb-chip">${esc(ch.mb_name)}</span>` : ''}
             ${ch.mb_country ? `<span class="mb-chip">${esc(ch.mb_country)}</span>` : ''}
             ${ch.mb_type    ? `<span class="mb-chip">${esc(ch.mb_type)}</span>` : ''}
             ${ch.mb_conf    ? `<span class="mb-chip" style="opacity:.6">MB ${ch.mb_conf}%</span>` : ''}
@@ -690,15 +817,16 @@ function renderChanDetail(s){
         </div>
       </div>
     </div>`;
-  document.getElementById('chanVidCount').textContent = ch.videos.length + ' videos';
+  document.getElementById('chanVidCount').textContent = (ch.videos||[]).length + ' videos';
   renderChanVids();
 }
 
 function renderChanVids(){
   const per=20;
-  const page=paginate(curChan.videos, chanVidPage, per);
+  const vids=curChan.videos||[];
+  const page=paginate(vids, chanVidPage, per);
   document.getElementById('chanVids').innerHTML = page.map(v=>videoItem(v,true)).join('');
-  renderPag('chanVidPag', curChan.videos.length, chanVidPage, per, 'goChanVidPage');
+  renderPag('chanVidPag', vids.length, chanVidPage, per, 'goChanVidPage');
 }
 
 // ================================================================
@@ -717,7 +845,7 @@ function doSearch(q){
   const ql=q.toLowerCase();
   const artists=(DB.artists||[]).filter(a=>a.name.toLowerCase().includes(ql)&&a.name!=='[unknown]').slice(0,12);
   const songs=(DB.songs||[]).filter(s=>(s.title||'').toLowerCase().includes(ql)||(s.artist||'').toLowerCase().includes(ql)).slice(0,12);
-  const chans=(DB.other_channels||[]).filter(c=>c.name.toLowerCase().includes(ql)).slice(0,12);
+  const chans=(DB.channels||[]).filter(c=>c.name.toLowerCase().includes(ql)).slice(0,12);
   const vids=(DB.recent||[]).filter(v=>(v.t||'').toLowerCase().includes(ql)||(v.ch||'').toLowerCase().includes(ql)).slice(0,24);
 
   let h='';

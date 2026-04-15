@@ -23,8 +23,9 @@ DB_PATH         = os.path.join(os.path.dirname(__file__), "wl.db")
 DATA_JSON_PATH  = os.path.join(os.path.dirname(__file__), "data.json")
 ADMIN_JSON_PATH = os.path.join(os.path.dirname(__file__), "admin_data.json")
 
-MAX_ARTIST_VIDS = 500   # videos kept per artist in JSON
-MAX_CHAN_VIDS   = 100   # videos kept per non-music channel in JSON
+MAX_ARTIST_VIDS  = 500   # videos kept per artist in JSON
+MAX_CHAN_VIDS    = 100   # videos kept per non-music channel in JSON
+MAX_MUSIC_CH_VIDS = 20  # videos kept per music channel in JSON
 
 
 def slug(s):
@@ -118,6 +119,44 @@ def build_data(con):
             'cat': r[4],
         })
 
+    # ── music channels (from ad_channels + wl_videos) ───────
+    mv_by_url = defaultdict(list)
+    for r in con.execute("""
+        SELECT wl_channel_url, wl_title, wl_video_id, wl_date_last
+        FROM   wl_videos
+        WHERE  wl_channel_url IS NOT NULL
+        ORDER  BY wl_date_last DESC NULLS LAST
+    """):
+        url, title, vid_id, date = r
+        if len(mv_by_url[url]) < MAX_MUSIC_CH_VIDS:
+            mv_by_url[url].append({
+                't':  title or '[Unavailable]',
+                'id': vid_id or '',
+                'ts': date,
+            })
+
+    channels = []
+    for r in con.execute("""
+        SELECT ad_url, ad_name, ad_plays, ad_mb_name, ad_mb_confidence, ad_music_videos
+        FROM   ad_channels
+        ORDER  BY ad_plays DESC
+    """):
+        url, name, plays, mb_name, mb_conf, music_vids = r
+        vids = mv_by_url.get(url, [])
+        latest = next((v['ts'] for v in vids if v['ts']), None)
+        ch = {
+            'name':         name,
+            'slug':         slug(name),
+            'url':          url,
+            'plays':        plays or 0,
+            'music_videos': music_vids or 0,
+            'videos':       vids,
+        }
+        if latest:   ch['latest']   = latest
+        if mb_name:  ch['mb_name']  = mb_name
+        if mb_conf:  ch['mb_conf']  = mb_conf
+        channels.append(ch)
+
     # ── other channels ───────────────────────────────────────
     other_channels = []
     for r in con.execute("""
@@ -182,6 +221,7 @@ def build_data(con):
         'cat_counts':     cat_counts,
         'recent':         recent,
         'artists':        artists,
+        'channels':       channels,
         'other_channels': other_channels,
         'songs':          songs,
     }
@@ -260,6 +300,7 @@ def main():
         print(f"  Wrote {DATA_JSON_PATH} ({sz} KB)")
         print(f"    total:          {data['total']:,}")
         print(f"    artists:        {len(data['artists']):,}")
+        print(f"    channels:       {len(data['channels']):,}")
         print(f"    other_channels: {len(data['other_channels']):,}")
         print(f"    songs:          {len(data['songs']):,}")
         print(f"    recent:         {len(data['recent']):,}")

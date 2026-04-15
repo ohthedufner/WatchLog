@@ -455,6 +455,13 @@ Option B is the faster fix. Option A aligns better with the intended feature.
 
 ---
 
+### BUG-12 ⚪ Remove "X ago" timestamps from artist, song, and channel list rows
+**What failed:** The artist list (and likely song/channel lists) display "last watched" relative timestamps like "3 months ago" or "2 days ago". This data is not meaningful or relevant to the viewer.
+**Scope:** Remove `ago()` display from all three list pages (Artists, Songs, Channels). Do not change the underlying `latest` field or pipeline — the data can stay in `data.json`. Display change only.
+**Dependency:** Hold until a batch of DB/display field decisions are ready to implement together. No urgency.
+
+---
+
 ### BUG-11 ⚪ favicon.ico missing (404 on every page load)
 **What failed:** Every page load logs `404 NOT FOUND` for `http://localhost:8000/favicon.ico`.
 **Why it failed:** No `favicon.ico` file exists in the project root.

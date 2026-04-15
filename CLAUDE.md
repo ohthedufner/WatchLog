@@ -470,4 +470,4 @@ Ren Gill and Gorillaz are hardcoded featured artists in `index.html` (biography,
 
 ---
 
-*Last updated: 2026-04-13 (evening) CDT*
+*Last updated: 2026-04-15 (noon) CDT*

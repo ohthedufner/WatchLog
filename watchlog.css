@@ -140,7 +140,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(5,5,10,.93);backdrop-filte
 .channel-plays{font-family:'Space Mono',monospace;font-size:.6rem;color:var(--c2)}
 
 /* MYSTERY SECTION */
-.mystery-header{background:linear-gradient(135deg,rgba(191,95,255,.1),rgba(255,45,120,.08));border:1px solid rgba(191,95,255,.25);border-radius:10px;padding:1.1rem 1.4rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem}
+.mystery-header{background:linear-gradient(135deg,rgba(191,95,255,.1),rgba(255,45,120,.08));border:1px solid rgba(191,95,255,.25);border-radius:10px 10px 0 0;padding:1.1rem 1.4rem;display:flex;align-items:center;gap:1rem}
 .mystery-skull{font-size:1.8rem}
 .mystery-title{font-family:'Orbitron',monospace;font-weight:700;font-size:1rem;color:var(--c5)}
 .mystery-sub{font-family:'Space Mono',monospace;font-size:.62rem;color:var(--text3);margin-top:.2rem}
@@ -212,6 +212,37 @@ nav{position:sticky;top:0;z-index:100;background:rgba(5,5,10,.93);backdrop-filte
 .song-detail-row{display:flex;gap:2rem;flex-wrap:wrap;margin-bottom:.5rem}
 .song-detail-field{font-family:'Space Mono',monospace;font-size:.65rem;color:var(--text3)}
 .song-detail-field span{color:var(--text);margin-left:.3rem}
+
+/* ALPHABET FILTER BAR */
+.alpha-bar{display:flex;flex-wrap:wrap;gap:.2rem;margin-bottom:.75rem}
+.alpha-btn{font-family:'Space Mono',monospace;font-size:.6rem;letter-spacing:.04em;padding:.28rem .45rem;border-radius:4px;cursor:pointer;border:1px solid var(--border);color:var(--text3);background:var(--surface);transition:all .12s;min-width:26px;text-align:center;line-height:1.4}
+.alpha-btn:hover{color:var(--text);border-color:rgba(255,45,120,.35);background:var(--surface2)}
+.alpha-btn.active{color:var(--c1);border-color:rgba(255,45,120,.5);background:rgba(255,45,120,.1)}
+
+/* VERTICAL LIST (replaces artist/song/channel grids) */
+.item-list{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:1.25rem}
+.list-row{display:flex;align-items:center;gap:1rem;padding:.58rem 1.1rem;border-bottom:1px solid rgba(26,26,53,.6);cursor:pointer;transition:background .12s}
+.list-row:last-child{border-bottom:none}
+.list-row:hover{background:var(--surface2)}
+.list-row-name{flex:0 1 40%;font-size:.82rem;font-weight:500;min-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.list-row-artist{font-family:'DM Sans',sans-serif;font-size:.78rem;color:var(--text2);flex:0 1 25%;min-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.list-row-sub{font-family:'Space Mono',monospace;font-size:.57rem;color:var(--c2);white-space:nowrap;flex-shrink:0}
+.list-row-meta{font-family:'Space Mono',monospace;font-size:.6rem;color:var(--text2);white-space:nowrap;display:flex;gap:.5rem;align-items:center;flex-shrink:0}
+
+/* ADMIN CATEGORIZATION PANEL */
+.admin-panel{background:rgba(255,107,0,.04);border:1px solid rgba(255,107,0,.2);border-radius:10px;overflow:hidden;margin-bottom:1.25rem}
+.admin-panel-header{padding:.85rem 1.25rem;border-bottom:1px solid rgba(255,107,0,.15);display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.admin-panel-title{font-family:'Space Mono',monospace;font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:var(--c4)}
+.admin-panel-count{font-family:'Space Mono',monospace;font-size:.62rem;color:var(--text3)}
+.admin-ch-row{display:flex;align-items:center;gap:.75rem;padding:.6rem 1.25rem;border-bottom:1px solid rgba(26,26,53,.6)}
+.admin-ch-row:last-child{border-bottom:none}
+.admin-ch-name{flex:1;font-size:.8rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.admin-ch-plays{font-family:'Space Mono',monospace;font-size:.62rem;color:var(--text2);min-width:60px;text-align:right;flex-shrink:0}
+.admin-cat-select{background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:'Space Mono',monospace;font-size:.65rem;padding:.32rem .55rem;outline:none;cursor:pointer;flex-shrink:0}
+.admin-cat-select:focus{border-color:rgba(255,107,0,.4)}
+.admin-confirm-btn{background:rgba(170,255,0,.1);border:1px solid rgba(170,255,0,.25);border-radius:5px;color:var(--c3);font-family:'Space Mono',monospace;font-size:.62rem;padding:.32rem .65rem;cursor:pointer;flex-shrink:0;transition:all .15s;white-space:nowrap;letter-spacing:.04em}
+.admin-confirm-btn:hover:not(:disabled){background:rgba(170,255,0,.2)}
+.admin-confirm-btn:disabled{opacity:.3;cursor:default}
 
 @media(max-width:768px){
   nav{padding:0 .75rem;gap:.3rem}

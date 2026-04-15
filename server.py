@@ -34,6 +34,12 @@ def get_db():
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA foreign_keys=ON")
+    con.execute("""CREATE TABLE IF NOT EXISTS wl_channel_cats (
+        wl_cc_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        wl_channel_url  TEXT NOT NULL UNIQUE,
+        wl_category     TEXT NOT NULL
+    )""")
+    con.commit()
     return con
 
 
@@ -147,6 +153,44 @@ def add_link():
     return jsonify({"ok": True, "created": created}), 201
 
 
+@app.route("/api/unknown-channels")
+def unknown_channels():
+    con = get_db()
+    rows = con.execute(
+        """SELECT dj_name, dj_channel_url, dj_plays, dj_category
+           FROM   dj_other_channels
+           WHERE  dj_category IN ('unsure', '')
+           ORDER  BY dj_plays DESC"""
+    ).fetchall()
+    con.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/channel-category", methods=["POST"])
+def set_channel_category():
+    data     = request.get_json(force=True) or {}
+    url      = (data.get("channel_url") or "").strip()
+    category = (data.get("category")    or "").strip()
+    if not url or not category:
+        return jsonify({"ok": False, "error": "channel_url and category required"}), 400
+
+    con = get_db()
+    # Persist in user-editable table (survives pipeline rebuild)
+    con.execute(
+        "INSERT INTO wl_channel_cats (wl_channel_url, wl_category) VALUES (?,?)"
+        " ON CONFLICT(wl_channel_url) DO UPDATE SET wl_category=excluded.wl_category",
+        (url, category),
+    )
+    # Apply immediately to live dj_other_channels
+    con.execute(
+        "UPDATE dj_other_channels SET dj_category=? WHERE dj_channel_url=?",
+        (category, url),
+    )
+    con.commit()
+    con.close()
+    return jsonify({"ok": True})
+
+
 @app.route("/api/artist-links/<int:link_id>", methods=["DELETE"])
 def delete_link(link_id):
     con = get_db()
@@ -163,4 +207,4 @@ if __name__ == "__main__":
     print(f"WatchLog local server: http://localhost:{port}/")
     print(f"Database: {DB}")
     print("Ctrl-C to stop.\n")
-    app.run(host="127.0.0.1", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False)

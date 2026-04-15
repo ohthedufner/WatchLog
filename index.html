@@ -91,6 +91,7 @@
       </div>
     </div>
   </div>
+  <div class="alpha-bar" id="artistAlpha"></div>
   <div class="filters">
     <input class="filter-input" id="artistSearch" placeholder="Filter artists..." oninput="filterArtists(this.value)">
     <select class="sort-select" onchange="sortArtists(this.value)">
@@ -99,7 +100,7 @@
       <option value="recent">Recently Watched</option>
     </select>
   </div>
-  <div class="artist-grid" id="artistGrid"></div>
+  <div class="item-list" id="artistGrid"></div>
   <div class="pagination" id="artistPag"></div>
 </div>
 
@@ -109,6 +110,7 @@
   <div id="artistHero"></div>
   <div id="seeAlsoSection"></div>
   <div id="artistExtra"></div>
+  <div id="adminUnknownPanel"></div>
   <div class="panel">
     <div class="panel-header">
       <span class="panel-title">Watch History</span>
@@ -126,17 +128,19 @@
 <div id="page-songs" class="page">
   <div class="section-label">// Song Library</div>
   <div class="section-title">Songs</div>
+  <div class="alpha-bar" id="songAlpha"></div>
   <div class="filters">
     <input class="filter-input" id="songSearch" placeholder="Filter songs..." oninput="filterSongs(this.value)">
     <input class="filter-input" id="songArtistSearch" placeholder="Filter by artist..." oninput="filterSongArtist(this.value)" style="width:160px">
     <select class="sort-select" onchange="sortSongs(this.value)">
+      <option value="az" selected>A–Z (Title)</option>
+      <option value="artist">By Artist</option>
       <option value="plays">Most Played</option>
-      <option value="az">A–Z</option>
       <option value="recent">Recently Watched</option>
       <option value="year">Release Year</option>
     </select>
   </div>
-  <div class="song-grid" id="songGrid"></div>
+  <div class="item-list" id="songGrid"></div>
   <div class="pagination" id="songPag"></div>
 </div>
 
@@ -158,10 +162,15 @@
   <div class="section-label">// Channel Browser</div>
   <div class="section-title">Channels</div>
   <div class="cat-tabs" id="videoCatTabs"></div>
+  <div class="alpha-bar" id="chanAlpha"></div>
   <div class="filters">
     <input class="filter-input" id="chanSearch" placeholder="Filter channels..." oninput="filterChans(this.value)">
+    <select class="sort-select" onchange="sortChans(this.value)">
+      <option value="plays" selected>Most Played</option>
+      <option value="az">A–Z</option>
+    </select>
   </div>
-  <div class="channel-grid" id="chanGrid"></div>
+  <div class="item-list" id="chanGrid"></div>
   <div class="pagination" id="chanPag"></div>
 </div>
 
