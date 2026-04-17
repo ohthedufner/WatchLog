@@ -2,7 +2,7 @@
 
 A personal music and video history viewer built from Google Takeout exports.
 
-Browse your YouTube watch history by artist, song, and channel. See play counts, recently watched, and "See Also" artist relationships you curate yourself.
+Browse your YouTube watch history by artist, song, and channel. See play counts, recently watched, and curator-maintained "See Also" relationships and content type tags.
 
 ---
 
@@ -39,7 +39,7 @@ Browse your YouTube watch history by artist, song, and channel. See play counts,
    # View-only (no editing):
    python -m http.server 8000
 
-   # With editing support (artist See Also links, etc.):
+   # With editing support (curator features):
    python server.py
    ```
 
@@ -60,13 +60,30 @@ Google Takeout export
 
 ---
 
-## Editing
+## Curator Features
 
-Running `python server.py` instead of the plain HTTP server enables write-back features:
+Running `python server.py` instead of the plain HTTP server enables write-back features. All curator edits are stored in `wl.db` and survive pipeline rebuilds.
 
-- **Artist See Also links** — on any artist page, search for related artists and add/remove "See Also" chips. Links are stored in `wl.db` and survive pipeline rebuilds.
+- **Artist See Also links** — on any artist page, search for related artists and add/remove "See Also" chips
+- **Content type tagging** — on any artist or song page, assign a content type to each video (Music Video, Audio Only, Lyric Video, Visualizer, etc.) via a per-row dropdown. Auto-assigned on import; curator-correctable at any time.
+- **Channel categorization** — via the admin panel, assign categories to uncategorized channels
 
-More editable fields are planned as the backend API grows.
+### Content Types
+
+| Value | Description |
+|-------|-------------|
+| `MUSIC_VIDEO` | Official or fan music video |
+| `AUDIO_ONLY` | Audio with no video component |
+| `LYRIC_VIDEO` | Lyrics displayed on screen |
+| `VISUALIZER` | Abstract/animated visuals |
+| `MEDLEY` | Multiple songs in one video |
+| `MUSIC_SET` | Concert or multi-song performance |
+| `BTS` | Behind the scenes |
+| `SPOKEN` | Primarily spoken word |
+| `REACTION` | Creator reacting to a song or video |
+| `BIO` | Biographical or history content |
+| `CLIPS` | Fan compilations or clip collections |
+| `OTHER_XXXXXXXX` | Freeform tag (8 alphanumeric chars) |
 
 ---
 
