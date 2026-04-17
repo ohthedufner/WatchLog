@@ -25,6 +25,8 @@ manual_editing/curator data stucture.txt
 
 # ── Browser test artifacts ────────────────────────────────────────────────────
 .playwright-mcp/
+test-*.jpeg
+test-*.png
 
 # ── Local config / personal notes ────────────────────────────────────────────
 .mcp.json

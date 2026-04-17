@@ -207,9 +207,10 @@
 ## Phase 5 — Future (Design Awareness Only)
 
 ### 5.1 ⚪ Featured Artist Pages
-Full per-artist profiles: bio, affiliations, arcs, timeline.
-Ren and Gorillaz are priority candidates. "See Also" links (3.6) are the first step toward this.
-Prerequisite: Admin page complete, document management decision, move `ARTIST_META` out of index.html JS.
+Full per-artist profiles: bio, affiliations, arcs, timeline. A "Featured" section on the Artists page highlights curated artists with a short bio card linking to their detail page.
+- Ren and Gorillaz are the first candidates — `ARTIST_META` in `watchlog.js` already holds their bio, affiliates, and narrative arcs
+- The featured cards were briefly on the Artists page but removed (2026-04-15) — content preserved in `ARTIST_META`, ready to restore when the full system is built
+- Prerequisite: move `ARTIST_META` out of `watchlog.js` into external Markdown/JSON files (see 5.7), then the featured section can be data-driven rather than hardcoded
 
 ### 5.2 ⚪ wl_songs Editing
 Curator-editable fields on song records: correct title, correct artist, manual MB ID override.

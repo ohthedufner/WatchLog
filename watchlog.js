@@ -4,7 +4,7 @@
 let DB = null;
 let serverMode = false;   // true when local Flask server is running
 
-const artistSt = { list:[], filtered:[], sort:'plays', q:'', page:0, per:60, alpha:'All' };
+const artistSt = { list:[], filtered:[], sort:'az', q:'', page:0, per:60, alpha:'All' };
 const chanSt   = { list:[], filtered:[], cat:'all', sort:'plays', q:'', page:0, per:60, alpha:'All' };
 const songSt   = { list:[], filtered:[], sort:'az',    q:'', qa:'', page:0, per:60, alpha:'All' };
 
@@ -45,6 +45,24 @@ let curArtist = null, artVidPage = 0;
 let curChan   = null, chanVidPage = 0;
 let curSong   = null;
 let adminMode = localStorage.getItem('wl_admin_mode') === 'on';
+
+// ================================================================
+// THEME
+// ================================================================
+const THEMES = ['neon', 'daylight'];
+let currentTheme = localStorage.getItem('wl_theme') || 'neon';
+
+function applyTheme(t) {
+  currentTheme = t;
+  localStorage.setItem('wl_theme', t);
+  document.documentElement.setAttribute('data-theme', t === 'neon' ? '' : t);
+  document.querySelectorAll('.theme-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.theme === t);
+  });
+}
+
+// Apply immediately (before boot) to avoid flash
+applyTheme(currentTheme);
 
 // ================================================================
 // PLAYER MODE
@@ -109,7 +127,6 @@ async function boot() {
     DB = await r.json();
     document.getElementById('loading').style.display = 'none';
     artistSt.list = (DB.artists || []).slice();
-    artistSt.filtered = artistSt.list.slice();
     chanSt.list = (DB.channels || []).slice();
     chanSt.filtered = chanSt.list.slice();
     songSt.list = (DB.songs || []).slice();
@@ -119,7 +136,7 @@ async function boot() {
     buildAlphaBar('songAlpha',   songSt,   'setSongAlpha');
     buildAlphaBar('chanAlpha',   chanSt,   'setChanAlpha');
     renderHome();
-    renderArtistGrid();
+    applyArtistFilter();
     renderChanGrid();
     renderSongGrid();
     handleHash();
@@ -211,6 +228,52 @@ function videoItem(v, showCat=false){
       ${msSong && msSong!==title ? `<div style="font-family:'Space Mono',monospace;font-size:.54rem;color:var(--text3);margin-top:.1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(title)}">${esc(title)}</div>` : ''}
     </div>
   </a>`;
+}
+
+const CT_OPTS = [
+  ['MUSIC_VIDEO','Music Video'],['AUDIO_ONLY','Audio Only'],
+  ['LYRIC_VIDEO','Lyric Video'],['VISUALIZER','Visualizer'],
+  ['MEDLEY','Medley'],['MUSIC_SET','Music Set'],
+  ['BTS','BTS'],['SPOKEN','Spoken'],['REACTION','Reaction'],
+  ['BIO','Bio'],['CLIPS','Clips'],
+];
+
+function vidItemAdmin(v){
+  if(!adminMode || !serverMode) return videoItem(v);
+  const vid = v.id || v.vid || '';
+  if(!vid) return videoItem(v);
+  const cur = v.ct || 'MUSIC_VIDEO';
+  const opts = CT_OPTS.map(([val,lbl])=>`<option value="${val}"${val===cur?' selected':''}>${lbl}</option>`).join('');
+  return `<div class="video-admin-row">
+    <div class="video-admin-ctrl">
+      <select class="admin-ct-select" id="ct-${vid}">${opts}</select>
+      <button class="admin-confirm-btn" onclick="event.preventDefault();saveContentType('${vid}',this)">Set</button>
+    </div>
+    ${videoItem(v)}
+  </div>`;
+}
+
+async function saveContentType(vid, btn){
+  const sel = document.getElementById('ct-'+vid);
+  if(!sel) return;
+  const ct = sel.value;
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    const r = await fetch('/api/video-content-type', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({video_id: vid, content_type: ct})
+    });
+    if(!r.ok) throw new Error();
+    // Update in-memory DB so re-render reflects the change
+    for(const a of (DB.artists||[])){
+      const v = a.videos.find(v=>v.id===vid);
+      if(v){ v.ct = ct === 'MUSIC_VIDEO' ? undefined : ct; break; }
+    }
+    if(curArtist) renderArtistVids();
+    else if(curSong) renderSongDetail(slug(curSong.artist)+'/'+slug(curSong.title));
+  } catch(e){
+    btn.disabled=false; btn.textContent='Set'; btn.style.color='var(--c4)';
+  }
 }
 
 function paginate(items, page, per){ return items.slice(page*per, (page+1)*per) }
@@ -305,13 +368,9 @@ function renderArtistGrid(){
   if(!items.length){ document.getElementById('artistGrid').innerHTML='<div class="empty">No artists found</div>'; return; }
   document.getElementById('artistGrid').innerHTML = items.map(a=>{
     const s=slug(a.name);
-    const feat=FEATURED.has(s);
     const sub=[a.mb_country,a.mb_type].filter(Boolean).join(' · ');
     return `<div class="list-row" onclick="go('artist','${s}')">
-      <div class="list-row-name">
-        ${feat?'<span class="featured-badge" style="margin-right:.5rem;font-size:.5rem">Featured</span>':''}
-        ${esc(a.name)}
-      </div>
+      <div class="list-row-name">${esc(a.name)}</div>
       ${sub ? `<div class="list-row-sub">${esc(sub)}</div>` : ''}
       <div class="list-row-meta">
         <span>${(a.plays||0).toLocaleString()} plays</span>
@@ -405,10 +464,24 @@ function renderArtistDetail(s){
 }
 
 function renderArtistVids(){
-  const sorted = (curArtist.videos||[]).slice().sort((a,b)=>(a.t||'').localeCompare(b.t||''));
-  const per=20, page=paginate(sorted, artVidPage, per);
-  document.getElementById('artistVids').innerHTML = page.map(v=>videoItem(v)).join('');
-  renderPag('artistVidPag', sorted.length, artVidPage, per, 'goArtVidPage');
+  const all = curArtist.videos || [];
+  const audio = all.filter(v => v.ct === 'AUDIO_ONLY').slice().sort((a,b)=>(a.t||'').localeCompare(b.t||''));
+  const video = all.filter(v => v.ct !== 'AUDIO_ONLY').slice().sort((a,b)=>(a.t||'').localeCompare(b.t||''));
+  const per = 20;
+
+  if (!audio.length) {
+    const page = paginate(video, artVidPage, per);
+    document.getElementById('artistVids').innerHTML = page.map(v=>vidItemAdmin(v)).join('');
+    renderPag('artistVidPag', video.length, artVidPage, per, 'goArtVidPage');
+    return;
+  }
+
+  const pageVids = paginate(video, artVidPage, per);
+  let html = '';
+  if (video.length)  html += `<div class="vid-group-label">Video</div>` + pageVids.map(v=>vidItemAdmin(v)).join('');
+  if (audio.length)  html += `<div class="vid-group-label">Audio</div>` + audio.map(v=>vidItemAdmin(v)).join('');
+  document.getElementById('artistVids').innerHTML = html;
+  renderPag('artistVidPag', video.length, artVidPage, per, 'goArtVidPage');
 }
 function goArtVidPage(p){ artVidPage=p; renderArtistVids(); }
 
@@ -712,18 +785,32 @@ function renderSongDetail(key){
   // Source videos
   const vids = s.vids || [];
   document.getElementById('songVidCount').textContent = vids.length + ' video' + (vids.length===1?'':'s');
-  document.getElementById('songVids').innerHTML = vids.map(vid => {
-    // Find full video info from artist data
+
+  const resolved = vids.map(vid => {
     let v = null;
     for(const a of (DB.artists||[])){
       v = a.videos.find(av => av.id === vid);
       if(v){ v = {...v, ch: a.name}; break; }
     }
-    return v ? videoItem(v) : `<a class="video-item" href="#" onclick="sendToPlayer('${vid}');return false;">
-      <div class="video-thumb"><img src="${thumb(vid)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'video-thumb-ph\\'>&#9654;</div>'"></div>
-      <div class="video-info"><div class="video-title">${vid}</div></div>
-    </a>`;
-  }).join('') || '<div class="empty" style="padding:1rem">No video IDs recorded</div>';
+    return {vid, v};
+  });
+
+  const mkItem = ({vid, v}) => v ? vidItemAdmin(v) : `<a class="video-item" href="#" onclick="sendToPlayer('${vid}');return false;">
+    <div class="video-thumb"><img src="${thumb(vid)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'video-thumb-ph\\'>&#9654;</div>'"></div>
+    <div class="video-info"><div class="video-title">${vid}</div></div>
+  </a>`;
+
+  const audioItems = resolved.filter(({v}) => v?.ct === 'AUDIO_ONLY');
+  const videoItems = resolved.filter(({v}) => !v || v.ct !== 'AUDIO_ONLY');
+
+  let html = '';
+  if (audioItems.length && videoItems.length) {
+    html += `<div class="vid-group-label">Video</div>` + videoItems.map(mkItem).join('');
+    html += `<div class="vid-group-label">Audio</div>` + audioItems.map(mkItem).join('');
+  } else {
+    html = resolved.map(mkItem).join('');
+  }
+  document.getElementById('songVids').innerHTML = html || '<div class="empty" style="padding:1rem">No video IDs recorded</div>';
 }
 
 // ================================================================

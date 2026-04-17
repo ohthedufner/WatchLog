@@ -43,6 +43,22 @@ def get_db():
     return con
 
 
+@app.route("/api/video-content-type", methods=["POST"])
+def set_video_content_type():
+    data         = request.get_json(force=True) or {}
+    video_id     = (data.get("video_id")     or "").strip()
+    content_type = (data.get("content_type") or "").strip().upper()
+    VALID = {'MUSIC_VIDEO','AUDIO_ONLY','LYRIC_VIDEO','VISUALIZER','MEDLEY',
+             'MUSIC_SET','BTS','SPOKEN','REACTION','BIO','CLIPS'}
+    if not video_id or (content_type not in VALID and not content_type.startswith('OTHER_')):
+        return jsonify({"ok": False, "error": "invalid input"}), 400
+    con = get_db()
+    con.execute("UPDATE wl_videos SET wl_content_type=? WHERE wl_video_id=?", (content_type, video_id))
+    con.commit()
+    con.close()
+    return jsonify({"ok": True})
+
+
 # ── Static file serving ───────────────────────────────────────────────────────
 
 @app.route("/")
@@ -189,6 +205,8 @@ def set_channel_category():
     con.commit()
     con.close()
     return jsonify({"ok": True})
+
+
 
 
 @app.route("/api/artist-links/<int:link_id>", methods=["DELETE"])

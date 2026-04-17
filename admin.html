@@ -12,6 +12,42 @@
   --c1:#ff2d78; --c2:#00e5ff; --c3:#aaff00; --c4:#ff6b00; --c5:#bf5fff;
   --text:#e8e8f0; --text2:#8888aa; --text3:#4a4a6a;
 }
+[data-theme="daylight"] {
+  --bg:#eef0f6; --bg2:#e5e8f2; --bg3:#d8dceb;
+  --surface:#ffffff; --surface2:#f3f5fb; --border:#c4c8de;
+  --c1:#b8174a; --c2:#006fa3; --c3:#3d7200; --c4:#b84800; --c5:#6822a8;
+  --text:#1a1a2e; --text2:#44446a; --text3:#7878a0;
+}
+[data-theme="daylight"] body{font-weight:450;font-size:1.02rem}
+[data-theme="daylight"] body::before{background:none}
+[data-theme="daylight"] body::after{background:radial-gradient(ellipse 60% 40% at 20% 0%,rgba(184,23,74,.04) 0%,transparent 60%),radial-gradient(ellipse 50% 30% at 80% 100%,rgba(0,111,163,.03) 0%,transparent 60%)}
+[data-theme="daylight"] nav{background:rgba(238,240,246,.96);box-shadow:0 1px 6px rgba(0,0,0,.1)}
+[data-theme="daylight"] .nav-link{font-weight:600}
+[data-theme="daylight"] .stat-card,[data-theme="daylight"] .panel,[data-theme="daylight"] .sidebar-panel{box-shadow:0 1px 4px rgba(0,0,0,.07)}
+[data-theme="daylight"] .stat-card:nth-child(1) .stat-num{color:var(--c2)}
+[data-theme="daylight"] .stat-card:nth-child(2) .stat-num{color:var(--c1)}
+[data-theme="daylight"] .stat-card:nth-child(3) .stat-num{color:var(--c3)}
+[data-theme="daylight"] .stat-card:nth-child(4) .stat-num{color:var(--c5)}
+[data-theme="daylight"] .panel-title{font-weight:700;color:var(--text2)}
+[data-theme="daylight"] .ch-search{background:var(--surface);color:var(--text)}
+[data-theme="daylight"] .ch-search:focus{border-color:rgba(0,111,163,.4)}
+[data-theme="daylight"] .ch-filter{background:var(--surface);color:var(--text)}
+[data-theme="daylight"] .ch-table td{font-weight:500}
+[data-theme="daylight"] .ch-name{color:var(--text)}
+[data-theme="daylight"] .ch-row:hover{background:var(--surface2)}
+[data-theme="daylight"] .ch-row.selected{background:rgba(0,111,163,.07);outline-color:rgba(0,111,163,.25)}
+[data-theme="daylight"] .mb-badge.accepted{background:rgba(61,114,0,.1);color:var(--c3);border-color:rgba(61,114,0,.25)}
+[data-theme="daylight"] .mb-badge.review{background:rgba(184,72,0,.1);color:var(--c4);border-color:rgba(184,72,0,.25)}
+[data-theme="daylight"] .mb-badge.no_match{background:rgba(120,120,160,.08);color:var(--text3)}
+[data-theme="daylight"] .mb-badge.pending{background:rgba(0,111,163,.08);color:var(--c2);border-color:rgba(0,111,163,.2)}
+[data-theme="daylight"] .page-btn{background:var(--surface);font-weight:500}
+[data-theme="daylight"] .page-btn:hover:not(:disabled){border-color:rgba(0,111,163,.3);color:var(--c2)}
+[data-theme="daylight"] .selected-item{border-bottom-color:var(--border)}
+[data-theme="daylight"] .selected-name{color:var(--text)}
+[data-theme="daylight"] .cmd-code{background:var(--surface);color:var(--c3)}
+[data-theme="daylight"] .cmd-copy{background:rgba(0,111,163,.08);border-color:rgba(0,111,163,.2);color:var(--c2)}
+[data-theme="daylight"] .cmd-copy:hover:not(:disabled){background:rgba(0,111,163,.15)}
+[data-theme="daylight"] .admin-toggle{background:var(--surface);color:var(--text3)}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;overflow-x:hidden}
 body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.08) 2px,rgba(0,0,0,.08) 4px);pointer-events:none;z-index:9999}
@@ -140,6 +176,10 @@ nav{position:sticky;top:0;z-index:100;background:rgba(5,5,10,.93);backdrop-filte
   <a class="nav-link" href="index.html">← Site</a>
   <div class="admin-toggle" id="adminToggle" onclick="toggleAdminMode()">
     <span id="adminToggleLabel">Admin Mode: OFF</span>
+  </div>
+  <div class="mode-toggle" style="margin-left:auto" title="Switch theme">
+    <button class="mode-btn theme-btn" data-theme="neon"     onclick="applyTheme('neon')">Neon</button>
+    <button class="mode-btn theme-btn" data-theme="daylight" onclick="applyTheme('daylight')">Day</button>
   </div>
 </nav>
 
@@ -421,6 +461,14 @@ function esc(s) {
 }
 
 init();
+
+function applyTheme(t) {
+  localStorage.setItem('wl_theme', t);
+  document.documentElement.setAttribute('data-theme', t === 'neon' ? '' : t);
+  document.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === t));
+}
+// Apply saved theme immediately
+applyTheme(localStorage.getItem('wl_theme') || 'neon');
 
 function toggleAdminMode() {
   const on = localStorage.getItem('wl_admin_mode') !== 'on';

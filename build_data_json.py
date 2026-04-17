@@ -77,11 +77,16 @@ def build_data(con):
     # ── artist videos index (artist_id → [compact vids]) ─────
     av_by_artist = defaultdict(list)
     for r in con.execute("""
-        SELECT dj_artist_id, dj_title, dj_video_id, dj_date
-        FROM   dj_artist_videos
-        ORDER  BY dj_date DESC
+        SELECT daj.dj_artist_id, daj.dj_title, daj.dj_video_id, daj.dj_date,
+               wv.wl_content_type
+        FROM   dj_artist_videos daj
+        LEFT JOIN wl_videos wv ON wv.wl_video_id = daj.dj_video_id
+        ORDER  BY daj.dj_date DESC
     """):
-        av_by_artist[r[0]].append({'t': r[1], 'id': r[2] or '', 'ts': r[3]})
+        v = {'t': r[1], 'id': r[2] or '', 'ts': r[3]}
+        if r[4] and r[4] != 'MUSIC_VIDEO':
+            v['ct'] = r[4]
+        av_by_artist[r[0]].append(v)
 
     # ── artists ──────────────────────────────────────────────
     artists = []
@@ -187,6 +192,7 @@ def build_data(con):
             s.wl_feat_artist                               AS feat,
             s.mb_recording_id                              AS mb_id,
             s.mb_confidence                                AS mb_conf,
+            s.wl_artist_id                                 AS artist_id,
             SUM(v.wl_play_count)                           AS plays,
             MAX(NULLIF(v.wl_date_last, ''))                AS latest,
             GROUP_CONCAT(v.wl_video_id)                    AS vids_csv,
@@ -197,7 +203,7 @@ def build_data(con):
         GROUP BY s.wl_song_id
         ORDER BY plays DESC
     """):
-        sid, title, raw_title, artist, feat, mb_id, mb_conf, plays, latest, vids_csv, mt = r
+        sid, title, raw_title, artist, feat, mb_id, mb_conf, artist_id, plays, latest, vids_csv, mt = r
         vids = [v for v in (vids_csv or '').split(',') if v]
         song = {
             'sid':   sid,
@@ -211,6 +217,7 @@ def build_data(con):
         if latest:  song['latest']  = latest
         if feat:    song['feat']    = feat
         if mt:      song['mt']      = mt
+        if artist_id: song['artist_id'] = artist_id
         if mb_id:   song['mb_id']   = mb_id
         if mb_conf: song['mb_conf'] = mb_conf
         songs.append(song)

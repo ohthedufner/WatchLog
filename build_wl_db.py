@@ -8,15 +8,18 @@ Table prefix convention (per field naming standard):
   wl_  watchlog.db / user-edited data (songs, videos, links, curator tables)
 
 Rebuild strategy:
-  Pipeline tables (wh_, dj_, ad_, wl_songs/videos/song_video) are dropped and
-  recreated on every run.  User-edited tables (wl_artist_links, future curator
-  tables) use CREATE TABLE IF NOT EXISTS and are NEVER dropped — their data
-  survives rebuilds.
+  Pipeline tables (wh_, dj_, ad_) are dropped and recreated on every run.
+  wl_videos, wl_songs, wl_song_video are PERSISTENT — new records are upserted,
+  existing records updated (pipeline fields only). Curator-owned fields
+  (wl_artist_id) are never overwritten after first assignment.
+  User-edited tables (wl_artists, wl_artist_links, wl_channel_cats) use
+  CREATE TABLE IF NOT EXISTS and are NEVER dropped.
 """
 
 import json
 import sqlite3
 import os
+import re
 
 DB_PATH         = os.path.join(os.path.dirname(__file__), "wl.db")
 WH_PATH         = os.path.join(os.path.dirname(__file__), "Google_Takeout", "watch-history.json")
@@ -25,10 +28,35 @@ AD_PATH         = os.path.join(os.path.dirname(__file__), "admin_data.json")
 WATCHLOG_DB_PATH = os.path.join(os.path.dirname(__file__), "watchlog.db")
 
 
+def _slugify(s):
+    return re.sub(r'[^a-z0-9]+', '-', (s or '').lower()).strip('-')
+
+
+def _content_type(video_id, title, media_type, yt_music_ids):
+    """Auto-assign wl_content_type from available signals. Curator can override."""
+    if video_id in yt_music_ids:
+        return 'AUDIO_ONLY'
+    if 'audio' in (media_type or '').lower():
+        return 'AUDIO_ONLY'
+    t = (title or '').lower()
+    if 'visualizer' in t:
+        return 'VISUALIZER'
+    if 'lyric' in t:
+        return 'LYRIC_VIDEO'
+    if 'bts' in t:
+        return 'BTS'
+    if 'poem' in t:
+        return 'SPOKEN'
+    if 'reaction' in t:
+        return 'REACTION'
+    if 'fan compilation' in t:
+        return 'CLIPS'
+    return 'MUSIC_VIDEO'
+
+
 # Pipeline tables dropped and recreated on every build.
-# Order matters for FK safety (children before parents).
+# wl_songs / wl_videos / wl_song_video are NOT in this list — they are persistent.
 _PIPELINE_TABLES = [
-    "wl_song_video", "wl_videos", "wl_songs",
     "dj_artist_videos", "dj_artists",
     "dj_other_videos", "dj_other_channels",
     "dj_recent", "dj_cat_counts", "dj_meta",
@@ -37,12 +65,28 @@ _PIPELINE_TABLES = [
 ]
 
 
+def migrate_schema(con):
+    """One-time migrations to evolve persistent table schemas without data loss."""
+    cols = {row[1] for row in con.execute("PRAGMA table_info(wl_videos)")}
+    if cols and 'wl_artist_id' not in cols:
+        for t in ('wl_song_video', 'wl_videos', 'wl_songs'):
+            con.execute(f"DROP TABLE IF EXISTS [{t}]")
+        con.commit()
+        print("Schema migration: rebuilt wl_videos/wl_songs/wl_song_video with wl_artist_id.")
+        cols = set()  # fresh table, recheck below
+
+    if cols and 'wl_content_type' not in cols:
+        con.execute("ALTER TABLE wl_videos ADD COLUMN wl_content_type TEXT")
+        con.commit()
+        print("Schema migration: added wl_content_type to wl_videos.")
+
+
 def reset_pipeline_tables(con):
-    """Drop all pipeline tables. User-edited tables (wl_artist_links etc.) are untouched."""
+    """Drop all pipeline tables. Persistent wl_ tables and user-edited tables are untouched."""
     for t in _PIPELINE_TABLES:
         con.execute(f"DROP TABLE IF EXISTS [{t}]")
     con.commit()
-    print("Pipeline tables cleared (user data preserved).")
+    print("Pipeline tables cleared (wl_ data and user data preserved).")
 
 
 def create_schema(con):
@@ -145,68 +189,30 @@ def create_schema(con):
     );
 
     -- ----------------------------------------------------------------
-    -- wl_ tables  (source: watchlog.db — pipeline/curation database)
+    -- wl_ user-edited tables  (NEVER dropped — survive all rebuilds)
     -- ----------------------------------------------------------------
 
-    -- One row per music video (music category only).
-    -- wl_artist_name comes from watchlog.db videos.norm_name (channel-derived).
-    CREATE TABLE IF NOT EXISTS wl_videos (
-        wl_vid_id           INTEGER PRIMARY KEY AUTOINCREMENT,
-        wl_video_id         TEXT,           -- YouTube video ID
-        wl_cleaned_title    TEXT,
-        wl_title            TEXT,           -- raw title
-        wl_channel_url      TEXT,
-        wl_artist_name      TEXT,           -- norm_name from watchlog.db
-        wl_feat_artist      TEXT,
-        wl_play_count       INTEGER,
-        wl_date_first       TEXT,
-        wl_date_last        TEXT,
-        wl_media_type       TEXT,
-        mb_recording_id     TEXT,
-        mb_confidence       INTEGER,
-        mb_status           TEXT
+    -- One row per artist. Default populated from norm_name on first import.
+    -- MB enrichment fields filled by build_watchlog_db.py --mb-artists.
+    -- wl_artist_id is the stable FK used by wl_videos and wl_songs.
+    CREATE TABLE IF NOT EXISTS wl_artists (
+        wl_artist_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+        wl_name         TEXT NOT NULL,
+        wl_slug         TEXT UNIQUE,
+        wl_sort_name    TEXT,
+        mb_artist_id    TEXT,
+        mb_country      TEXT,
+        mb_type         TEXT,
+        mb_begin_date   TEXT,
+        mb_end_date     TEXT,
+        mb_tags         TEXT,
+        mb_confidence   INTEGER,
+        mb_status       TEXT DEFAULT 'pending',
+        mb_cached_at    TEXT,
+        wl_notes        TEXT
     );
-
-    -- One row per unique song, identified by (normalized cleaned_title, normalized artist).
-    -- Canonical title/artist form is taken from the highest-played matching video.
-    -- wl_match_basis: 'title+artist' when both present, 'title_only' when artist is blank.
-    -- No MusicBrainz data yet — mb_ fields reserved for future matching.
-    CREATE TABLE IF NOT EXISTS wl_songs (
-        wl_song_id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        wl_cleaned_title    TEXT,
-        wl_artist_name      TEXT,
-        wl_feat_artist      TEXT,
-        wl_video_count      INTEGER DEFAULT 0,
-        wl_match_basis      TEXT,
-        mb_recording_id     TEXT,
-        mb_song_name        TEXT,
-        mb_artist_id        TEXT,
-        mb_confidence       INTEGER,
-        mb_status           TEXT,
-        wl_notes            TEXT
-    );
-
-    -- Junction: one song → many videos.
-    -- No UNIQUE constraint on (wl_song_id, wl_vid_id) so that later MusicBrainz
-    -- matching can produce multiple candidate rows for ambiguous cases.
-    -- wl_match_type: 'exact' (title+artist matched verbatim),
-    --                'normalized' (matched after lowercasing/trimming).
-    CREATE TABLE IF NOT EXISTS wl_song_video (
-        wl_sv_id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        wl_song_id          INTEGER REFERENCES wl_songs(wl_song_id),
-        wl_vid_id           INTEGER REFERENCES wl_videos(wl_vid_id),
-        wl_match_type       TEXT
-    );
-
-    -- ----------------------------------------------------------------
-    -- wl_ user-edited tables  (NEVER dropped — survive pipeline rebuilds)
-    -- ----------------------------------------------------------------
 
     -- Artist "See also" relationships.
-    -- Uses dj_slug as the stable key (deterministic from artist name,
-    -- survives DB rebuilds unlike auto-increment dj_artist_id).
-    -- Relationship is directional; UI adds both directions when mutual.
-    -- wl_label defaults to 'See also'; future values: 'Member of', 'Side project'.
     CREATE TABLE IF NOT EXISTS wl_artist_links (
         wl_al_id        INTEGER PRIMARY KEY AUTOINCREMENT,
         wl_from_slug    TEXT NOT NULL,
@@ -216,12 +222,64 @@ def create_schema(con):
     );
 
     -- Curator-assigned channel categories.
-    -- Overrides the category assigned by the pipeline for dj_other_channels.
-    -- Written by the admin UI; applied after dj_other_channels is rebuilt.
     CREATE TABLE IF NOT EXISTS wl_channel_cats (
         wl_cc_id        INTEGER PRIMARY KEY AUTOINCREMENT,
         wl_channel_url  TEXT NOT NULL UNIQUE,
         wl_category     TEXT NOT NULL
+    );
+
+    -- ----------------------------------------------------------------
+    -- wl_ persistent tables  (not dropped — upserted on each rebuild)
+    -- wl_artist_id is curator-owned: set on first import, never overwritten.
+    -- ----------------------------------------------------------------
+
+    -- One row per music video. Stable key: wl_video_id (YouTube ID).
+    CREATE TABLE IF NOT EXISTS wl_videos (
+        wl_vid_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        wl_video_id         TEXT UNIQUE,        -- YouTube video ID
+        wl_cleaned_title    TEXT,
+        wl_title            TEXT,
+        wl_channel_url      TEXT,
+        wl_artist_name      TEXT,               -- norm_name from watchlog.db (display)
+        wl_feat_artist      TEXT,
+        wl_play_count       INTEGER,
+        wl_date_first       TEXT,
+        wl_date_last        TEXT,
+        wl_media_type       TEXT,
+        mb_recording_id     TEXT,
+        mb_confidence       INTEGER,
+        mb_status           TEXT,
+        wl_artist_id        INTEGER REFERENCES wl_artists(wl_artist_id),
+        wl_content_type     TEXT
+    );
+
+    -- One row per unique song title. Multiple videos (from any artist) link here.
+    -- wl_match_basis: how the song was first identified ('title+artist' or 'title_only').
+    CREATE TABLE IF NOT EXISTS wl_songs (
+        wl_song_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        wl_cleaned_title    TEXT,
+        wl_artist_name      TEXT,               -- canonical artist (from first/highest-played video)
+        wl_feat_artist      TEXT,
+        wl_video_count      INTEGER DEFAULT 0,
+        wl_match_basis      TEXT,
+        mb_recording_id     TEXT,
+        mb_song_name        TEXT,
+        mb_artist_id        TEXT,
+        mb_confidence       INTEGER,
+        mb_status           TEXT,
+        wl_notes            TEXT,
+        wl_artist_id        INTEGER REFERENCES wl_artists(wl_artist_id)
+    );
+
+    -- Junction: one song → many videos.
+    -- wl_match_type: 'exact' (verbatim title+artist), 'normalized' (same after lowercasing),
+    --                'title_only' (same title, different artist — cross-artist link).
+    CREATE TABLE IF NOT EXISTS wl_song_video (
+        wl_sv_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        wl_song_id          INTEGER REFERENCES wl_songs(wl_song_id),
+        wl_vid_id           INTEGER REFERENCES wl_videos(wl_vid_id),
+        wl_match_type       TEXT,
+        UNIQUE(wl_song_id, wl_vid_id)
     );
     """)
     con.commit()
@@ -350,16 +408,15 @@ def load_admin_data(con):
 
 
 def load_watchlog_db(con):
-    """Populate wl_videos, wl_songs, and wl_song_video from watchlog.db.
+    """Upsert wl_videos, wl_songs, wl_artists, and wl_song_video from watchlog.db.
 
-    Matching strategy:
-      - Group music videos by (LOWER(TRIM(cleaned_title)), LOWER(TRIM(norm_name))).
-      - Each unique group becomes one wl_songs row.
-      - Canonical title/artist form taken from the highest-played video in the group
-        (source query is ordered by play_count DESC).
-      - Same title + different artist → separate song records (covers / genuine duplicates).
-      - Junction rows are inserted without a UNIQUE constraint so future MB matching
-        can append additional candidate rows for ambiguous cases.
+    Song matching order:
+      1. title + artist match  → match_type 'exact' or 'normalized'
+      2. title-only match      → match_type 'title_only' (cross-artist link to existing song)
+      3. no match              → new song record created
+
+    Curator-owned fields (wl_artist_id on videos and songs) are never
+    overwritten after first assignment.
     """
     print("Loading watchlog.db ...", flush=True)
 
@@ -377,101 +434,165 @@ def load_watchlog_db(con):
     videos = src_cur.fetchall()
     src.close()
 
-    # --- Pass 1: build song registry -----------------------------------------
-    # song_key  → index into canonical_songs list (first-seen = highest play count)
-    song_registry  = {}   # (title_key, artist_key) → canonical index
-    canonical_songs = []  # list of dicts: {wl_cleaned_title, wl_artist_name, ...}
+    # --- Build YouTube Music video ID set (AUDIO_ONLY signal) ---
+    yt_music_ids = set()
+    for (url,) in con.execute(
+        "SELECT wh_title_url FROM wh_events WHERE wh_header='YouTube Music' AND wh_title_url IS NOT NULL"
+    ):
+        if url and 'watch?v=' in url:
+            yt_music_ids.add(url.split('watch?v=')[1].split('&')[0])
 
-    # track per-video which song_key it belongs to (same order as `videos`)
-    video_song_keys = []
+    # --- Load existing state from wl.db ---
+
+    # youtube_video_id → wl_vid_id
+    existing_vids = {}
+    for row in con.execute("SELECT wl_vid_id, wl_video_id FROM wl_videos"):
+        existing_vids[row[1]] = row[0]
+
+    # title_key → (wl_song_id, canon_artist_key, canon_title, canon_artist)
+    existing_songs = {}
+    for row in con.execute("""
+        SELECT wl_song_id,
+               LOWER(TRIM(wl_cleaned_title)),
+               LOWER(TRIM(COALESCE(wl_artist_name, ''))),
+               wl_cleaned_title,
+               COALESCE(wl_artist_name, '')
+        FROM wl_songs
+    """):
+        existing_songs[row[1]] = (row[0], row[2], row[3], row[4])
+
+    # name_lower → wl_artist_id
+    existing_artists = {}
+    for row in con.execute("SELECT wl_artist_id, LOWER(TRIM(wl_name)) FROM wl_artists"):
+        existing_artists[row[1]] = row[0]
+
+    new_vids = updated_vids = new_songs = new_artists = 0
+    junction_rows = []  # (wl_song_id, wl_vid_id, match_type)
 
     for v in videos:
         cleaned_title = (v["cleaned_title"] or "").strip()
         artist_name   = (v["norm_name"]      or "").strip()
-        feat_artist   = (v["feat_artist"]    or "").strip()
+        feat_artist   = (v["feat_artist"]    or "").strip() or None
+        video_id      = v["video_id"]
 
         title_key  = cleaned_title.lower()
         artist_key = artist_name.lower()
-        song_key   = (title_key, artist_key)
 
-        if song_key not in song_registry:
-            song_registry[song_key] = len(canonical_songs)
-            canonical_songs.append({
-                "wl_cleaned_title": cleaned_title,
-                "wl_artist_name":   artist_name,
-                "wl_feat_artist":   feat_artist or None,
-                "wl_match_basis":   "title+artist" if artist_name else "title_only",
-            })
+        # --- Ensure wl_artists row exists for this norm_name ---
+        if artist_key and artist_key not in existing_artists:
+            slug_val = _slugify(artist_name)
+            cur = con.execute(
+                "INSERT OR IGNORE INTO wl_artists (wl_name, wl_slug, mb_status) VALUES (?,?,'pending')",
+                (artist_name, slug_val),
+            )
+            if cur.lastrowid:
+                existing_artists[artist_key] = cur.lastrowid
+                new_artists += 1
+            else:
+                # Slug collision — different name maps to same slug; fetch by slug
+                row = con.execute(
+                    "SELECT wl_artist_id FROM wl_artists WHERE wl_slug=?", (slug_val,)
+                ).fetchone()
+                if row:
+                    existing_artists[artist_key] = row[0]
 
-        video_song_keys.append(song_key)
+        artist_id   = existing_artists.get(artist_key)
+        content_type = _content_type(video_id, v["title"], v["media_type"], yt_music_ids)
 
-    # --- Pass 2: insert wl_songs ---------------------------------------------
-    song_db_ids = {}  # song_key → wl_song_id
-    for song_key, idx in song_registry.items():
-        s = canonical_songs[idx]
-        cur = con.execute(
-            """INSERT INTO wl_songs
-               (wl_cleaned_title, wl_artist_name, wl_feat_artist, wl_match_basis)
-               VALUES (?, ?, ?, ?)""",
-            (s["wl_cleaned_title"], s["wl_artist_name"],
-             s["wl_feat_artist"],   s["wl_match_basis"]),
-        )
-        song_db_ids[song_key] = cur.lastrowid
-
-    # --- Pass 3: insert wl_videos + collect junction rows --------------------
-    junction_rows = []  # (wl_song_id, wl_vid_id, wl_match_type)
-
-    for v, song_key in zip(videos, video_song_keys):
-        vid_cur = con.execute(
-            """INSERT INTO wl_videos
-               (wl_video_id, wl_cleaned_title, wl_title, wl_channel_url,
-                wl_artist_name, wl_feat_artist, wl_play_count,
-                wl_date_first, wl_date_last, wl_media_type,
-                mb_recording_id, mb_confidence, mb_status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (v["video_id"], v["cleaned_title"], v["title"], v["channel_url"],
-             v["norm_name"], v["feat_artist"], v["play_count"],
-             v["date_first"], v["date_last"], v["media_type"],
-             v["mb_recording_id"], v["mb_confidence"], v["mb_status"]),
-        )
-        wl_vid_id  = vid_cur.lastrowid
-        wl_song_id = song_db_ids[song_key]
-
-        # Determine match type: exact if the video's own values already match
-        # the canonical form verbatim; normalized otherwise.
-        canon = canonical_songs[song_registry[song_key]]
-        if (v["cleaned_title"] or "").strip() == canon["wl_cleaned_title"] and \
-           (v["norm_name"]      or "").strip() == canon["wl_artist_name"]:
-            match_type = "exact"
+        # --- Upsert wl_videos ---
+        if video_id not in existing_vids:
+            cur = con.execute(
+                """INSERT INTO wl_videos
+                   (wl_video_id, wl_cleaned_title, wl_title, wl_channel_url,
+                    wl_artist_name, wl_feat_artist, wl_play_count,
+                    wl_date_first, wl_date_last, wl_media_type,
+                    mb_recording_id, mb_confidence, mb_status,
+                    wl_artist_id, wl_content_type)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (video_id, cleaned_title, v["title"], v["channel_url"],
+                 artist_name, feat_artist, v["play_count"],
+                 v["date_first"], v["date_last"], v["media_type"],
+                 v["mb_recording_id"], v["mb_confidence"], v["mb_status"],
+                 artist_id, content_type),
+            )
+            wl_vid_id = cur.lastrowid
+            existing_vids[video_id] = wl_vid_id
+            new_vids += 1
         else:
-            match_type = "normalized"
+            wl_vid_id = existing_vids[video_id]
+            # Update pipeline fields; wl_artist_id excluded (curator-owned).
+            # wl_content_type: backfill if NULL, preserve if already set by curator.
+            con.execute(
+                """UPDATE wl_videos SET
+                   wl_cleaned_title=?, wl_title=?, wl_channel_url=?,
+                   wl_artist_name=?, wl_feat_artist=?, wl_play_count=?,
+                   wl_date_first=?, wl_date_last=?, wl_media_type=?,
+                   mb_recording_id=?, mb_confidence=?, mb_status=?,
+                   wl_content_type=COALESCE(wl_content_type, ?)
+                   WHERE wl_video_id=?""",
+                (cleaned_title, v["title"], v["channel_url"],
+                 artist_name, feat_artist, v["play_count"],
+                 v["date_first"], v["date_last"], v["media_type"],
+                 v["mb_recording_id"], v["mb_confidence"], v["mb_status"],
+                 content_type, video_id),
+            )
+            updated_vids += 1
+
+        # --- Song matching ---
+        if title_key in existing_songs:
+            wl_song_id, canon_artist_key, canon_title, canon_artist = existing_songs[title_key]
+            if artist_key == canon_artist_key:
+                match_type = (
+                    "exact" if cleaned_title == canon_title and artist_name == canon_artist
+                    else "normalized"
+                )
+            else:
+                match_type = "title_only"
+        else:
+            # New song — first video for this title sets the canonical form
+            cur = con.execute(
+                """INSERT INTO wl_songs
+                   (wl_cleaned_title, wl_artist_name, wl_feat_artist,
+                    wl_match_basis, wl_artist_id)
+                   VALUES (?,?,?,?,?)""",
+                (cleaned_title, artist_name, feat_artist,
+                 "title+artist" if artist_name else "title_only",
+                 artist_id),
+            )
+            wl_song_id = cur.lastrowid
+            existing_songs[title_key] = (wl_song_id, artist_key, cleaned_title, artist_name)
+            new_songs += 1
+            match_type = "exact"
 
         junction_rows.append((wl_song_id, wl_vid_id, match_type))
 
+    # --- Insert junction rows (ignore duplicates from previous runs) ---
     con.executemany(
-        "INSERT INTO wl_song_video (wl_song_id, wl_vid_id, wl_match_type) VALUES (?,?,?)",
+        "INSERT OR IGNORE INTO wl_song_video (wl_song_id, wl_vid_id, wl_match_type) VALUES (?,?,?)",
         junction_rows,
     )
 
-    # --- Update wl_video_count on each song -----------------------------------
+    # --- Refresh video counts on all songs ---
     con.execute("""
         UPDATE wl_songs
-        SET    wl_video_count = (
+        SET wl_video_count = (
             SELECT COUNT(*) FROM wl_song_video sv
-            WHERE  sv.wl_song_id = wl_songs.wl_song_id
+            WHERE sv.wl_song_id = wl_songs.wl_song_id
         )
     """)
 
     con.commit()
-    print(f"  Inserted {len(song_db_ids):,} rows into wl_songs")
-    print(f"  Inserted {len(videos):,} rows into wl_videos")
-    print(f"  Inserted {len(junction_rows):,} rows into wl_song_video")
+    print(f"  Artists: {new_artists:,} new in wl_artists")
+    print(f"  Videos:  {new_vids:,} new, {updated_vids:,} updated in wl_videos")
+    print(f"  Songs:   {new_songs:,} new in wl_songs")
+    print(f"  Junction: {len(junction_rows):,} rows processed in wl_song_video")
 
 
 def main():
     con = sqlite3.connect(DB_PATH)
     con.execute("PRAGMA journal_mode=WAL")
     try:
+        migrate_schema(con)
         reset_pipeline_tables(con)
         create_schema(con)
         load_watch_history(con)

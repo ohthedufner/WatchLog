@@ -17,6 +17,10 @@
   <div class="nav-link" data-page="channels" onclick="go('channels')">Channels</div>
   <div class="nav-link" data-page="search"   onclick="go('search')">Search</div>
   <div class="nav-right">
+    <div class="mode-toggle" title="Switch theme">
+      <button class="mode-btn theme-btn" data-theme="neon"     onclick="applyTheme('neon')">Neon</button>
+      <button class="mode-btn theme-btn" data-theme="daylight" onclick="applyTheme('daylight')">Day</button>
+    </div>
     <div class="mode-toggle" title="Switch how videos open">
       <button class="mode-btn active" id="modeEmbed"   onclick="setMode('embed')">Embed</button>
       <button class="mode-btn"        id="modeYoutube" onclick="setMode('youtube')">YouTube</button>
@@ -65,38 +69,12 @@
 <div id="page-artists" class="page">
   <div class="section-label">// Music Library</div>
   <div class="section-title">Artists</div>
-  <div style="margin-bottom:1.5rem">
-    <div class="section-label" style="margin-bottom:.6rem">// Featured Artists</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
-      <div class="panel" style="cursor:pointer" onclick="go('artist','ren')">
-        <div class="panel-header">
-          <span class="panel-title">Ren Gill</span>
-          <span style="font-family:'Space Mono',monospace;font-size:.6rem;color:var(--c1)">Featured</span>
-        </div>
-        <div style="padding:1rem;font-size:.8rem;color:var(--text2);line-height:1.5">
-          Welsh artist, musician, storyteller. Rapper, poet, theatrical performer.
-          Overcame a decade of undiagnosed Lyme Disease. Creator of linked narrative arcs:
-          Jenny, Vincent, and more. Click to explore.
-        </div>
-      </div>
-      <div class="panel" style="cursor:pointer" onclick="go('artist','gorillaz')">
-        <div class="panel-header">
-          <span class="panel-title">Gorillaz</span>
-          <span style="font-family:'Space Mono',monospace;font-size:.6rem;color:var(--c1)">Featured</span>
-        </div>
-        <div style="padding:1rem;font-size:.8rem;color:var(--text2);line-height:1.5">
-          Fictional band created by Damon Albarn (Blur). One of music's most ambitious
-          ongoing art projects. 50+ collaborators across genres worldwide. Click to explore.
-        </div>
-      </div>
-    </div>
-  </div>
   <div class="alpha-bar" id="artistAlpha"></div>
   <div class="filters">
     <input class="filter-input" id="artistSearch" placeholder="Filter artists..." oninput="filterArtists(this.value)">
     <select class="sort-select" onchange="sortArtists(this.value)">
       <option value="plays">Most Played</option>
-      <option value="az">A–Z</option>
+      <option value="az" selected>A–Z</option>
       <option value="recent">Recently Watched</option>
     </select>
   </div>
