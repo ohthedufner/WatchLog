@@ -73,7 +73,9 @@ Google Takeout export
 
 ## Curator Features
 
-Running `python server.py` instead of the plain HTTP server enables write-back features. All curator edits are stored in `wl.db` and survive pipeline rebuilds.
+> **Note for the demo:** The live demo runs on GitHub Pages as a static site, so curator features are not available there. The editing controls are hidden automatically when no local server is detected. Any page that would normally offer editing will explain this when you visit it locally without `server.py` running.
+
+Running `python server.py` instead of the plain HTTP server enables write-back features. The nav will show a **Viewer / Curator** toggle when the server is active — switch to Curator mode to access editing on any page. All curator edits are stored in `wl.db` and survive pipeline rebuilds.
 
 - **Artist See Also links** — on any artist page, search for related artists and add/remove "See Also" chips
 - **Content type tagging** — assign a content type to each video via a per-row dropdown. Auto-assigned on import; correctable at any time.
