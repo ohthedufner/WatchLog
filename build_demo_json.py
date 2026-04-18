@@ -192,18 +192,30 @@ def build_demo_data(con):
         {"t": "Talking Heads - Road to Nowhere",    "id": "LQiOA7euaYA", "ch": "Talking Heads", "ts": "2026-02-18", "cat": "Music", "url": ""},
     ]
 
+    # ── channels (demo artists as music channels) ────────────────────────────
+    channels = [
+        {
+            "name":   a["name"],
+            "slug":   a["slug"],
+            "cat":    "music",
+            "plays":  a["plays"],
+            "videos": a["videos"][:10],
+        }
+        for a in artists
+    ]
+
     # ── cat_counts and total ─────────────────────────────────────────────────
     total_plays = sum(a["plays"] for a in artists)
     cat_counts = {"Music": total_plays}
 
     return {
-        "generated":      datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "total":          total_plays,
-        "cat_counts":     cat_counts,
-        "recent":         recent,
-        "artists":        artists,
-        "other_channels": [],
-        "songs":          songs,
+        "generated":  datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "total":      total_plays,
+        "cat_counts": cat_counts,
+        "recent":     recent,
+        "artists":    artists,
+        "channels":   channels,
+        "songs":      songs,
     }
 
 

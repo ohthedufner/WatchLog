@@ -817,18 +817,22 @@ function renderSongDetail(key){
 // CHANNELS (was: VIDEOS)
 // ================================================================
 const CAT_LABELS = {
-  all:'All', tv:'TV', tech:'Tech', food:'Food',
+  all:'All', music:'Music', tv:'TV', tech:'Tech', food:'Food',
   comedy:'Comedy', news:'News', gaming:'Gaming',
-  other:'Other', unsure:'Mystery'
+  other:'Other', uncategorized:'Uncategorized'
 };
-const CAT_ORDER = ['all','tv','tech','food','comedy','news','gaming','other','unsure'];
+const CAT_ORDER = ['all','music','tv','tech','food','comedy','news','gaming','other','uncategorized'];
 
 function buildCatTabs(){
-  const cc = DB.cat_counts||{};
+  const counts = {};
+  (DB.channels||[]).forEach(ch => {
+    const c = ch.cat || 'uncategorized';
+    counts[c] = (counts[c]||0) + 1;
+  });
   document.getElementById('videoCatTabs').innerHTML = CAT_ORDER
-    .filter(c => c==='all' || (cc[c]||0)>0)
+    .filter(c => c==='all' || (counts[c]||0)>0)
     .map(c=>`<button class="cat-tab ${c==='all'?'active':''}" data-cat="${c}" onclick="setCat('${c}')">
-      ${CAT_LABELS[c]}${c!=='all'?` <span style="opacity:.5;font-size:.55rem">${(cc[c]||0).toLocaleString()}</span>`:''}
+      ${CAT_LABELS[c]||c}${c!=='all'?` <span style="opacity:.5;font-size:.55rem">${(counts[c]||0).toLocaleString()}</span>`:''}
     </button>`).join('');
 }
 
@@ -858,20 +862,21 @@ function renderChanGrid(){
   const grid = document.getElementById('chanGrid');
   if(!items.length){ grid.innerHTML='<div class="empty">No channels found</div>'; return; }
   let header='';
-  if(chanSt.cat==='unsure'){
+  if(chanSt.cat==='uncategorized'){
     header=`<div class="mystery-header">
-      <div class="mystery-skull">&#128128;</div>
-      <div><div class="mystery-title">Mystery Links</div>
-      <div class="mystery-sub">Watch at your own risk. Contents unknown. Proceed with curiosity.</div></div>
+      <div class="mystery-skull">&#x2753;</div>
+      <div><div class="mystery-title">Uncategorized Channels</div>
+      <div class="mystery-sub">These channels haven't been reviewed yet. Use the admin panel in Curator mode to assign categories.</div></div>
     </div>`;
   }
   grid.innerHTML = header + items.map(ch=>{
     const sub=[ch.mb_country,ch.mb_type].filter(Boolean).join(' · ');
-    return `<div class="list-row" onclick="go('channel','${slug(ch.name)}')">
+    const dest = ch.cat==='music' ? `go('artist','${ch.slug}')` : `go('channel','${slug(ch.name)}')`;
+    return `<div class="list-row" onclick="${dest}">
       <div class="list-row-name" title="${esc(ch.name)}">${esc(ch.name)}</div>
       ${sub ? `<div class="list-row-sub">${esc(sub)}</div>` : ''}
       <div class="list-row-meta">
-        ${ch.cat ? badge(ch.cat) : ''}
+        ${ch.cat && ch.cat!=='music' ? badge(ch.cat) : ''}
         <span>${(ch.plays||0).toLocaleString()} plays</span>
       </div>
     </div>`;

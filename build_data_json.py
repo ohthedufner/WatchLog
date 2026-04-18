@@ -124,6 +124,11 @@ def build_data(con):
             'cat': r[4],
         })
 
+    # ── curator category overrides ───────────────────────────
+    cat_overrides = {}
+    for row in con.execute("SELECT wl_channel_url, wl_category FROM wl_channel_cats"):
+        cat_overrides[row[0]] = row[1]
+
     # ── music channels (from ad_channels + wl_videos) ───────
     mv_by_url = defaultdict(list)
     for r in con.execute("""
@@ -149,10 +154,12 @@ def build_data(con):
         url, name, plays, mb_name, mb_conf, music_vids = r
         vids = mv_by_url.get(url, [])
         latest = next((v['ts'] for v in vids if v['ts']), None)
+        cat = cat_overrides.get(url, 'music')
         ch = {
             'name':         name,
             'slug':         slug(name),
             'url':          url,
+            'cat':          cat,
             'plays':        plays or 0,
             'music_videos': music_vids or 0,
             'videos':       vids,
@@ -162,24 +169,31 @@ def build_data(con):
         if mb_conf:  ch['mb_conf']  = mb_conf
         channels.append(ch)
 
-    # ── other channels ───────────────────────────────────────
-    other_channels = []
+    # ── other channels (non-music) ───────────────────────────
+    # 'other'        = curator explicitly assigned this category
+    # 'uncategorized' = never reviewed; default for all new channels
     for r in con.execute("""
         SELECT dj_oc_id, dj_name, dj_category, dj_channel_url, dj_slug, dj_plays, dj_latest
         FROM   dj_other_channels
         ORDER  BY dj_plays DESC
     """):
-        oc_id, name, cat, curl, sg, plays, latest = r
+        oc_id, name, auto_cat, curl, sg, plays, latest = r
         vids = ov_by_chan.get(oc_id, [])[:MAX_CHAN_VIDS]
-        other_channels.append({
+        cat = cat_overrides.get(curl, auto_cat or 'uncategorized')
+        if cat in ('unsure', '', None):
+            cat = 'uncategorized'
+        ch = {
             'name':   name,
             'cat':    cat,
-            'curl':   curl,
+            'url':    curl,
             'slug':   sg or slug(name),
             'plays':  plays or 0,
-            'latest': latest,
             'videos': vids,
-        })
+        }
+        if latest: ch['latest'] = latest
+        channels.append(ch)
+
+    channels.sort(key=lambda c: c.get('plays', 0), reverse=True)
 
     # ── songs (from wl_songs + wl_videos via wl_song_video) ──
     songs = []
@@ -223,14 +237,13 @@ def build_data(con):
         songs.append(song)
 
     return {
-        'generated':      datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-        'total':          total,
-        'cat_counts':     cat_counts,
-        'recent':         recent,
-        'artists':        artists,
-        'channels':       channels,
-        'other_channels': other_channels,
-        'songs':          songs,
+        'generated':  datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'total':      total,
+        'cat_counts': cat_counts,
+        'recent':     recent,
+        'artists':    artists,
+        'channels':   channels,
+        'songs':      songs,
     }
 
 
@@ -308,7 +321,6 @@ def main():
         print(f"    total:          {data['total']:,}")
         print(f"    artists:        {len(data['artists']):,}")
         print(f"    channels:       {len(data['channels']):,}")
-        print(f"    other_channels: {len(data['other_channels']):,}")
         print(f"    songs:          {len(data['songs']):,}")
         print(f"    recent:         {len(data['recent']):,}")
 
