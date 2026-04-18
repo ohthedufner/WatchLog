@@ -91,6 +91,7 @@ def _load_cleaning_rules(path):
 
     # Compile regex lists
     rules = {}
+    rules["channel_name_suffixes"] = result.get("channel_name_suffixes") or []
     rules["feat_patterns"] = [
         re.compile(p, re.IGNORECASE) for p in (result.get("feat_patterns") or [])
     ]

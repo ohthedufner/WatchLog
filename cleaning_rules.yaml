@@ -1,27 +1,68 @@
-# cleaning_rules.yaml — Curator-editable title cleaning rules
-# Used by build_watchlog_db.py
+# =============================================================================
+# WatchLog — Cleaning Rules
+# =============================================================================
 #
-# All regex patterns use case-insensitive matching automatically.
-# Single or double quotes are optional around values.
+# This file controls how YouTube channel names and video titles are cleaned
+# up before being stored and displayed in WatchLog.
 #
-# media_type_map: order matters — first match wins.
+# There are two kinds of rules in this file:
+#
+#   PLAIN TEXT  (Sections 1, 2, 3)
+#   No special syntax. Add or remove lines following the examples.
+#   These are safe to edit freely.
+#
+#   REGULAR EXPRESSIONS  (Sections 4, 5)
+#   These use a pattern language called "regex" to match text that varies
+#   (like a year that changes, or a venue name). The defaults cover almost
+#   everything. You probably won't need to touch these — but if you do,
+#   examples and guidance are included.
+#
+# Lines starting with # are comments and are ignored.
+# =============================================================================
 
-# ---------------------------------------------------------------------------
-# Featured artist extraction
-# Each is a regex; the first capturing group is the featured artist name.
-# ---------------------------------------------------------------------------
-feat_patterns:
-  - '\(feat\.\s*([^)]+)\)'
-  - '\(ft\.\s*([^)]+)\)'
-  - '\[feat\.\s*([^\]]+)\]'
-  - '\[ft\.\s*([^\]]+)\]'
-  - '\(with\s+([^)]+)\)'
-  - '\bfeat\.\s+(.+?)(?=\s*[\(\[\|]|$)'
-  - '\bft\.\s+(.+?)(?=\s*[\(\[\|]|$)'
 
-# ---------------------------------------------------------------------------
-# Literal noise suffixes to strip from title ends
-# ---------------------------------------------------------------------------
+# =============================================================================
+# SECTION 1 — Channel display name cleanup   [PLAIN TEXT]
+# =============================================================================
+#
+# YouTube automatically appends these suffixes to certain channel names.
+# WatchLog strips them so the display name is clean.
+# The original channel name is always kept in full — nothing is lost.
+#
+# Examples of what this does:
+#   "Gorillaz - Topic"   →   "Gorillaz"
+#   "RihannaVEVO"        →   "Rihanna"
+#
+# If you see channels in your data with other auto-generated suffixes,
+# add them here exactly as they appear (they are matched case-insensitively
+# at the end of the channel name only).
+
+channel_name_suffixes:
+  - " - Topic"
+  - "VEVO"
+
+
+# =============================================================================
+# SECTION 2 — Noise to remove from song titles   [PLAIN TEXT]
+# =============================================================================
+#
+# These are phrases that YouTube creators commonly append to video titles.
+# They add no meaning to the song name and are stripped during import.
+#
+# Examples of what gets removed:
+#   "Gorillaz - Feel Good Inc. (Official Music Video)"
+#     →  "Feel Good Inc."
+#
+#   "Ren - Hi Ren [Official Video] (HD)"
+#     →  "Hi Ren"
+#
+# These are matched at the END of the title only, case-insensitively.
+# Both the (round bracket) and [square bracket] versions of a phrase
+# are usually listed — add both if you need a new one.
+#
+# Tip: if something still appears in your song titles that shouldn't,
+# add it here exactly as it appears in the original YouTube title.
+
 noise_suffix_literals:
   - "(Official Music Video)"
   - "(Official Video)"
@@ -65,28 +106,29 @@ noise_suffix_literals:
   - "| Lyric Video"
   - "| Official Lyric Video"
 
-# ---------------------------------------------------------------------------
-# Regex noise patterns (matched anywhere in the title, after literal removal)
-# ---------------------------------------------------------------------------
-noise_regex_patterns:
-  - '\(Remastered(?:\s+\d{4})?\)'
-  - '\[Remastered(?:\s+\d{4})?\]'
-  - '\(Live\s+at\s+[^)]+\)'
-  - '\(Live\s*@\s*[^)]+\)'
-  - '\[Live\s+at\s+[^\]]+\]'
-  - '\(from\s+[^)]+\)'
-  - '\(Official\)'
-  - '\[Official\]'
-  - '\|\s*Official\b.*$'
-  - '\(Music Video\)'
-  - '\[Music Video\]'
-  - '\(\d{4}\s+(?:Remaster|Version)\)'
 
-# ---------------------------------------------------------------------------
-# Media type map: stripped-text fragment -> canonical label
-# First match wins. Fragments are matched case-insensitively against all
-# stripped text joined together.
-# ---------------------------------------------------------------------------
+# =============================================================================
+# SECTION 3 — Content type labels   [PLAIN TEXT — key: value pairs]
+# =============================================================================
+#
+# When noise text is stripped from a title, WatchLog looks at what was removed
+# to decide what kind of content the video is.
+#
+# Format:   "text to look for":  "Label to assign"
+#
+# The text on the left is matched anywhere in everything that was stripped,
+# case-insensitively. The first match wins, so order matters.
+#
+# Examples of how this works:
+#   Title had "(Official Music Video)" stripped
+#     →  matches "official music video"  →  labeled "Official Music Video"
+#
+#   Title had "(Live at Glastonbury 2022)" stripped
+#     →  matches "live at"  →  labeled "Live"
+#
+# To add a new content type label, add a line in the same format.
+# The label on the right is what appears in WatchLog's content type field.
+
 media_type_map:
   "official music video":  "Official Music Video"
   "official lyric video":  "Official Lyric Video"
@@ -110,3 +152,83 @@ media_type_map:
   "live video":            "Live"
   "acoustic":              "Acoustic"
   "visualiz":              "Visualizer"
+
+
+# =============================================================================
+# SECTION 4 — Featured artist detection   [REGULAR EXPRESSIONS]
+# =============================================================================
+#
+# These patterns find and extract featured artists from video titles.
+# The defaults handle the formats used on the vast majority of YouTube titles.
+#
+# What the defaults match:
+#   "(feat. Sam Tompkins)"   →  extracts "Sam Tompkins"
+#   "[ft. Kit]"              →  extracts "Kit"
+#   "(with Ren)"             →  extracts "Ren"
+#   "ft. Ren"  at end        →  extracts "Ren"
+#
+# You probably won't need to change this section.
+#
+# If you do: each pattern must contain exactly one capturing group — that is,
+# one pair of plain parentheses ( ) that surrounds the artist name portion.
+# All patterns match case-insensitively.
+#
+# Quick regex reference for reading these patterns:
+#   \(  \)    — literal parenthesis characters (the \ means "treat as text")
+#   \[  \]    — literal square bracket characters
+#   \s*       — any amount of whitespace (spaces, tabs)
+#   \s+       — one or more whitespace characters
+#   [^)]+     — any characters except a closing parenthesis
+#   .+?       — any characters, as few as possible
+#   (?=...)   — "followed by" (does not consume the text)
+#   $         — end of the string
+#   \b        — word boundary (between a word character and a non-word character)
+
+feat_patterns:
+  - '\(feat\.\s*([^)]+)\)'
+  - '\(ft\.\s*([^)]+)\)'
+  - '\[feat\.\s*([^\]]+)\]'
+  - '\[ft\.\s*([^\]]+)\]'
+  - '\(with\s+([^)]+)\)'
+  - '\bfeat\.\s+(.+?)(?=\s*[\(\[\|]|$)'
+  - '\bft\.\s+(.+?)(?=\s*[\(\[\|]|$)'
+
+
+# =============================================================================
+# SECTION 5 — Other noise patterns   [REGULAR EXPRESSIONS]
+# =============================================================================
+#
+# These match noise that can't be described as a simple fixed phrase — things
+# like "(Remastered 2005)" where the year changes each time, or "(Live at
+# Madison Square Garden)" where the venue name is different every time.
+#
+# What the defaults match and remove:
+#   "(Remastered 2005)", "(Remastered)"        →  stripped
+#   "(Live at Madison Square Garden)"          →  stripped
+#   "(Live @ Glastonbury)"                     →  stripped
+#   "(from the album Born to Run)"             →  stripped
+#   "(Official)"  or  "[Official]"             →  stripped
+#   "(Music Video)"  or  "[Music Video]"       →  stripped
+#   "(2005 Remaster)"                          →  stripped
+#   "| Official ..."  at end of title          →  stripped
+#
+# You probably won't need to change this section.
+#
+# Quick regex reference (in addition to Section 4 notes above):
+#   (?:...)   — a group that doesn't capture (just for grouping)
+#   \d{4}     — exactly four digits (matches a year like 2005)
+#   .*$       — anything through to the end of the line
+
+noise_regex_patterns:
+  - '\(Remastered(?:\s+\d{4})?\)'
+  - '\[Remastered(?:\s+\d{4})?\]'
+  - '\(Live\s+at\s+[^)]+\)'
+  - '\(Live\s*@\s*[^)]+\)'
+  - '\[Live\s+at\s+[^\]]+\]'
+  - '\(from\s+[^)]+\)'
+  - '\(Official\)'
+  - '\[Official\]'
+  - '\|\s*Official\b.*$'
+  - '\(Music Video\)'
+  - '\[Music Video\]'
+  - '\(\d{4}\s+(?:Remaster|Version)\)'

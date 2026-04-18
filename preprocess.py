@@ -30,18 +30,54 @@ from collections import defaultdict
 # ===========================================================================
 
 DELIMITER = "|"
+_RULES_FILE = os.path.join(os.path.dirname(__file__), "cleaning_rules.yaml")
+
 
 def _safe(s: str) -> str:
     """Replace pipe and newline characters in field values so they don't break the delimiter or line structure."""
     if not s:
         return s
     return s.replace('|', ' - ').replace(chr(10), ' ').replace(chr(13), '')
+
+
+def _unquote(s):
+    s = s.strip()
+    if len(s) >= 2 and s[0] in ('"', "'") and s[-1] == s[0]:
+        return s[1:-1]
+    return s
+
+
+def _load_channel_name_suffixes(path):
+    """Load channel_name_suffixes list from cleaning_rules.yaml."""
+    suffixes = []
+    in_section = False
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for raw in f:
+                line = raw.rstrip()
+                stripped = line.lstrip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                if not line[0].isspace():
+                    in_section = (line.rstrip(": \t") == "channel_name_suffixes")
+                elif in_section and stripped.startswith("- "):
+                    suffixes.append(_unquote(stripped[2:]))
+    except FileNotFoundError:
+        pass
+    return suffixes or [" - Topic", "VEVO"]
+
+
+_CHANNEL_NAME_SUFFIXES = _load_channel_name_suffixes(_RULES_FILE)
+
 # Title prefixes to strip (case-insensitive)
 TITLE_PREFIX_RE = re.compile(r'^watched\s+this\s+|^watched\s+', re.IGNORECASE)
 
-# Channel name normalization: strip these suffixes before using as display name
-# The raw channel name is always preserved in full in the output
-NORMALIZE_SUFFIXES = re.compile(r'\s*-\s*Topic$|VEVO$', re.IGNORECASE)
+# Channel name normalization: built from cleaning_rules.yaml channel_name_suffixes
+_suffix_pattern = "|".join(
+    r'\s*' + re.escape(s.lstrip()) if s.startswith(" ") else re.escape(s)
+    for s in _CHANNEL_NAME_SUFFIXES
+)
+NORMALIZE_SUFFIXES = re.compile(f'(?:{_suffix_pattern})$', re.IGNORECASE)
 
 # ---------------------------------------------------------------------------
 # CATEGORIZATION RULES
@@ -49,7 +85,7 @@ NORMALIZE_SUFFIXES = re.compile(r'\s*-\s*Topic$|VEVO$', re.IGNORECASE)
 # Each rule is checked in order. First match wins.
 # Category values: music | tv | tech | news | unsure
 
-MUSIC_CHANNEL_SUFFIXES = (' - Topic', 'VEVO')
+MUSIC_CHANNEL_SUFFIXES = tuple(_CHANNEL_NAME_SUFFIXES)
 
 MUSIC_TITLE_KEYWORDS = [
     'official music video', 'official audio', 'official video',
