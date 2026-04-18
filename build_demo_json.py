@@ -1,14 +1,13 @@
 """
 build_demo_json.py
 ==================
-Generates demo data.json and admin_data.json for GitHub Pages demonstration.
+Generates the GitHub Pages demo dataset.
 
-Includes only: Ren, The Big Push, Gorillaz, and their related channels.
-Adds curated See Also links so the feature is visible in the demo.
-Sanitizes recent list to only include videos from demo artists.
+Output files: data.demo.json and admin_data.demo.json
+These do NOT overwrite the local data.json / admin_data.json.
 
-Run from the project root:
-    python build_demo_json.py
+To publish the demo to GitHub, run:
+    python deploy_demo.py
 """
 
 import json
@@ -19,8 +18,8 @@ from datetime import datetime, timezone
 from collections import defaultdict
 
 DB_PATH         = os.path.join(os.path.dirname(__file__), "wl.db")
-DATA_JSON_PATH  = os.path.join(os.path.dirname(__file__), "data.json")
-ADMIN_JSON_PATH = os.path.join(os.path.dirname(__file__), "admin_data.json")
+DATA_JSON_PATH  = os.path.join(os.path.dirname(__file__), "data.demo.json")
+ADMIN_JSON_PATH = os.path.join(os.path.dirname(__file__), "admin_data.demo.json")
 
 # Artists to include (slug values)
 DEMO_ARTIST_SLUGS = {
@@ -275,7 +274,7 @@ def main():
 
     con = sqlite3.connect(DB_PATH)
     try:
-        print("Building demo data.json ...")
+        print("Building data.demo.json ...")
         data = build_demo_data(con)
         with open(DATA_JSON_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
@@ -287,7 +286,7 @@ def main():
         print(f"    recent:       {len(data['recent'])}")
 
         print()
-        print("Building demo admin_data.json ...")
+        print("Building admin_data.demo.json ...")
         admin = build_demo_admin(con)
         with open(ADMIN_JSON_PATH, "w", encoding="utf-8") as f:
             json.dump(admin, f, ensure_ascii=False, separators=(",", ":"))

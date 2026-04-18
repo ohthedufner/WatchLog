@@ -10,6 +10,8 @@ watchlog.db
 wl.db
 *.db-shm
 *.db-wal
+data.demo.json
+admin_data.demo.json
 
 # ── Secondary pipeline output directory ──────────────────────────────────────
 html_out/
