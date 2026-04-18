@@ -30,11 +30,16 @@ DEMO_ARTIST_SLUGS = {
     "renmakesstuff",
     "gz-23-gorillaz-live-archive",
     "whatsnextgorillaz",
+    "talking-heads",
 }
 
 # Artist names as stored in wl_videos/wl_songs (used for song/video filtering)
 DEMO_ARTIST_NAMES = {"Ren", "The Big Push", "Gorillaz", "RenMakesStuff",
-                     "GZ 23 (Gorillaz Live Archive)", "whatsnextgorillaz"}
+                     "GZ 23 (Gorillaz Live Archive)", "whatsnextgorillaz",
+                     "Talking Heads"}
+
+# Artists whose AUDIO_ONLY records are excluded from the video list on the artist page
+AUDIO_EXCLUDED_SLUGS = {"talking-heads"}
 
 # Artist IDs for the above (used for video/song filtering)
 DEMO_ARTIST_IDS = None  # resolved at runtime
@@ -83,12 +88,18 @@ def build_demo_data(con):
     placeholders = ",".join("?" * len(DEMO_ARTIST_IDS))
     av_by_artist = defaultdict(list)
     for r in con.execute(f"""
-        SELECT dj_artist_id, dj_title, dj_video_id, dj_date
-        FROM   dj_artist_videos
-        WHERE  dj_artist_id IN ({placeholders})
-        ORDER  BY dj_date DESC
+        SELECT av.dj_artist_id, av.dj_title, av.dj_video_id, av.dj_date,
+               a.dj_slug, wv.wl_content_type
+        FROM   dj_artist_videos av
+        JOIN   dj_artists a  ON a.dj_artist_id  = av.dj_artist_id
+        LEFT JOIN wl_videos wv ON wv.wl_video_id = av.dj_video_id
+        WHERE  av.dj_artist_id IN ({placeholders})
+        ORDER  BY av.dj_date DESC
     """, list(DEMO_ARTIST_IDS)):
-        av_by_artist[r[0]].append({"t": r[1], "id": r[2] or "", "ts": r[3]})
+        aid, title, vid, date, artist_slug, content_type = r
+        if artist_slug in AUDIO_EXCLUDED_SLUGS and content_type == "AUDIO_ONLY":
+            continue
+        av_by_artist[aid].append({"t": title, "id": vid or "", "ts": date})
 
     # ── artists ──────────────────────────────────────────────────────────────
     artists = []
@@ -175,6 +186,10 @@ def build_demo_data(con):
         {"t": "Ren - Dominoes",                     "id": "bbbjWEnC3Gc", "ch": "Ren",          "ts": "2026-02-24", "cat": "Music", "url": ""},
         {"t": "The Big Push - Girls Just Want To Have Fun", "id": "OqEHMinvxMk", "ch": "The Big Push", "ts": "2026-02-23", "cat": "Music", "url": ""},
         {"t": "Ren - Penitence",                    "id": "R-7UHDoKlMw", "ch": "Ren",          "ts": "2026-02-22", "cat": "Music", "url": ""},
+        {"t": "Talking Heads - Psycho Killer",      "id": "CJ54eImz88w", "ch": "Talking Heads", "ts": "2026-02-21", "cat": "Music", "url": ""},
+        {"t": "Talking Heads - Burning Down the House", "id": "_3eC35LoF4U", "ch": "Talking Heads", "ts": "2026-02-20", "cat": "Music", "url": ""},
+        {"t": "Talking Heads - Once in a Lifetime", "id": "5IsSpAOD6K8", "ch": "Talking Heads", "ts": "2026-02-19", "cat": "Music", "url": ""},
+        {"t": "Talking Heads - Road to Nowhere",    "id": "LQiOA7euaYA", "ch": "Talking Heads", "ts": "2026-02-18", "cat": "Music", "url": ""},
     ]
 
     # ── cat_counts and total ─────────────────────────────────────────────────

@@ -32,9 +32,9 @@ def _slugify(s):
     return re.sub(r'[^a-z0-9]+', '-', (s or '').lower()).strip('-')
 
 
-def _content_type(video_id, title, media_type, yt_music_ids):
+def _content_type(video_id, channel_url, title, media_type, yt_music_ids, topic_channel_urls):
     """Auto-assign wl_content_type from available signals. Curator can override."""
-    if video_id in yt_music_ids:
+    if video_id in yt_music_ids or channel_url in topic_channel_urls:
         return 'AUDIO_ONLY'
     if 'audio' in (media_type or '').lower():
         return 'AUDIO_ONLY'
@@ -442,6 +442,15 @@ def load_watchlog_db(con):
         if url and 'watch?v=' in url:
             yt_music_ids.add(url.split('watch?v=')[1].split('&')[0])
 
+    # --- Build Topic channel URL set (AUDIO_ONLY signal) ---
+    # YouTube auto-generates " - Topic" channels for artists; all content is audio-only.
+    topic_channel_urls = {
+        row[0] for row in con.execute(
+            "SELECT DISTINCT wh_channel_url FROM wh_events "
+            "WHERE wh_channel_name LIKE '% - Topic' AND wh_channel_url IS NOT NULL"
+        )
+    }
+
     # --- Load existing state from wl.db ---
 
     # youtube_video_id → wl_vid_id
@@ -497,7 +506,7 @@ def load_watchlog_db(con):
                     existing_artists[artist_key] = row[0]
 
         artist_id   = existing_artists.get(artist_key)
-        content_type = _content_type(video_id, v["title"], v["media_type"], yt_music_ids)
+        content_type = _content_type(video_id, v["channel_url"], v["title"], v["media_type"], yt_music_ids, topic_channel_urls)
 
         # --- Upsert wl_videos ---
         if video_id not in existing_vids:
@@ -528,13 +537,13 @@ def load_watchlog_db(con):
                    wl_artist_name=?, wl_feat_artist=?, wl_play_count=?,
                    wl_date_first=?, wl_date_last=?, wl_media_type=?,
                    mb_recording_id=?, mb_confidence=?, mb_status=?,
-                   wl_content_type=COALESCE(wl_content_type, ?)
+                   wl_content_type=CASE WHEN ?='AUDIO_ONLY' THEN 'AUDIO_ONLY' ELSE COALESCE(wl_content_type, ?) END
                    WHERE wl_video_id=?""",
                 (cleaned_title, v["title"], v["channel_url"],
                  artist_name, feat_artist, v["play_count"],
                  v["date_first"], v["date_last"], v["media_type"],
                  v["mb_recording_id"], v["mb_confidence"], v["mb_status"],
-                 content_type, video_id),
+                 content_type, content_type, video_id),
             )
             updated_vids += 1
 

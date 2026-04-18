@@ -434,12 +434,16 @@ def mb_search_artist(name: str) -> dict | None:
     return top
 
 
-def mb_search_recording(title: str, artist: str) -> dict | None:
+def mb_search_recording(title: str, artist: str, artist_id: str | None = None) -> dict | None:
     """
-    Search MB for a recording by cleaned title + artist name.
+    Search MB for a recording by cleaned title + artist.
+    Uses arid:{artist_id} when available (precise); falls back to fuzzy artist name.
     Returns the top result dict or None.
     """
-    query = f'recording:"{title}" AND artist:"{artist}"'
+    if artist_id:
+        query = f'recording:"{title}" AND arid:{artist_id}'
+    else:
+        query = f'recording:"{title}" AND artist:"{artist}"'
     data = _mb_get("recording", {"query": query, "limit": 5})
     if not data or not data.get("recordings"):
         return None
@@ -675,12 +679,13 @@ def enrich_artists(conn: sqlite3.Connection, limit: int | None = None,
 # ===========================================================================
 
 def enrich_recordings(conn: sqlite3.Connection, limit: int | None = None,
-                      channel_urls: list | None = None) -> int:
+                      channel_urls: list | None = None,
+                      accepted_only: bool = False) -> int:
     """
     Match pending music videos to MusicBrainz recordings.
-    Uses cleaned_title + norm_name for the query.
+    Uses arid:{mb_artist_id} when the channel has a MB match; falls back to norm_name.
+    accepted_only=True restricts to channels with mb_status='accepted'.
     Returns count matched.
-    If channel_urls is provided, only videos from those channels are processed.
     """
     cur = conn.cursor()
     where = """WHERE v.category='music'
@@ -688,6 +693,8 @@ def enrich_recordings(conn: sqlite3.Connection, limit: int | None = None,
           AND v.cleaned_title != ''
           AND (v.mb_status='pending' OR v.mb_status IS NULL)"""
     params = []
+    if accepted_only:
+        where += " AND c.mb_status = 'accepted'"
     if channel_urls:
         placeholders = ','.join('?' * len(channel_urls))
         where += f" AND v.channel_url IN ({placeholders})"
@@ -718,7 +725,7 @@ def enrich_recordings(conn: sqlite3.Connection, limit: int | None = None,
         artist = row["norm_name"] or row["raw_name"]
         print(f"    > {artist} - {title[:50]}...", end=" ", flush=True)
 
-        result = mb_search_recording(title, artist)
+        result = mb_search_recording(title, artist, artist_id=row["mb_artist_id"])
 
         if result is None:
             cur.execute(
@@ -944,6 +951,10 @@ def main():
         help="Restrict MB enrichment to these channel URL(s) only"
     )
     parser.add_argument(
+        "--mb-accepted-only", action="store_true",
+        help="Restrict recording enrichment to channels with mb_status=accepted"
+    )
+    parser.add_argument(
         "--stats", action="store_true",
         help="Print DB stats and exit (no import/matching)"
     )
@@ -993,7 +1004,7 @@ def main():
 
         if not args.mb_artists_only:
             print("\nMusicBrainz recording enrichment...")
-            mb_recordings = enrich_recordings(conn, limit=args.mb_limit, channel_urls=args.mb_channel)
+            mb_recordings = enrich_recordings(conn, limit=args.mb_limit, channel_urls=args.mb_channel, accepted_only=args.mb_accepted_only)
             print(f"  {mb_recordings} recording(s) matched to MusicBrainz.")
     else:
         print("Skipping MusicBrainz lookups (--skip-mb).")

@@ -31,6 +31,8 @@ test-*.png
 # ── Local config / personal notes ────────────────────────────────────────────
 .mcp.json
 dufner_design_notes/
+CLAUDE.md
+PLAN.md
 
 # ── Claude session memory (not code) ─────────────────────────────────────────
 memory/
