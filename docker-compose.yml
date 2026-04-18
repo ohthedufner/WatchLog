@@ -1,9 +1,0 @@
-services:
-  watchlog:
-    build: .
-    ports:
-      - "8000:8000"
-    volumes:
-      # Mount the entire project folder so edits and DB changes are live
-      - .:/app
-    restart: unless-stopped

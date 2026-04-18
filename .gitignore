@@ -31,6 +31,11 @@ manual_editing/curator data stucture.txt
 test-*.jpeg
 test-*.png
 
+# ── Docker (planned, not ready for public) ───────────────────────────────────
+Dockerfile
+docker-compose.yml
+README-docker.md
+
 # ── Local config / personal notes ────────────────────────────────────────────
 .mcp.json
 dufner_design_notes/
