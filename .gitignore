@@ -16,11 +16,14 @@ html_out/
 
 # ── Superseded / temp files ───────────────────────────────────────────────────
 channel_overrides2.txt
+channel_overrides.txt
 debug_row.txt
 New Text Document.txt
 CLAUDE-old.md
 claude.txt
+plan-pld.md
 manual_editing/some_fixed.csv
+manual_editing/to_categorize.csv
 manual_editing/curator data stucture.txt
 
 # ── Browser test artifacts ────────────────────────────────────────────────────
@@ -33,6 +36,7 @@ test-*.png
 dufner_design_notes/
 CLAUDE.md
 PLAN.md
+.claude/settings.local.json
 
 # ── Claude session memory (not code) ─────────────────────────────────────────
 memory/
