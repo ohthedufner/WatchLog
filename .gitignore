@@ -22,9 +22,7 @@ New Text Document.txt
 CLAUDE-old.md
 claude.txt
 plan-pld.md
-manual_editing/some_fixed.csv
-manual_editing/to_categorize.csv
-manual_editing/curator data stucture.txt
+manual_editing/
 
 # ── Browser test artifacts ────────────────────────────────────────────────────
 .playwright-mcp/
