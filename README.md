@@ -2,7 +2,18 @@
 
 A personal music and video history viewer built from Google Takeout exports.
 
-Browse your YouTube watch history by artist, song, and channel. See play counts, recently watched, and curator-maintained "See Also" relationships and content type tags.
+Browse your YouTube watch history by artist, song, and channel — play counts, recently watched, curator-maintained "See Also" relationships, and per-video content type tags.
+
+**[Live demo →](https://ohthedufner.github.io/WatchLog/)**  
+The demo reflects the current state of all working features with a curated sample dataset.
+
+---
+
+## Theme Switcher
+
+WatchLog ships with two themes — **Neon** (dark, high-contrast) and **Day** (light) — switchable from the nav bar. Your choice persists across pages via `localStorage`.
+
+The visual layer lives entirely in `watchlog.css` using CSS custom properties, with a `data-theme` attribute on the root element driving the switch. The goal is to make swapping or adding a theme a CSS-only change, no logic required. A third theme is planned.
 
 ---
 
@@ -65,7 +76,7 @@ Google Takeout export
 Running `python server.py` instead of the plain HTTP server enables write-back features. All curator edits are stored in `wl.db` and survive pipeline rebuilds.
 
 - **Artist See Also links** — on any artist page, search for related artists and add/remove "See Also" chips
-- **Content type tagging** — on any artist or song page, assign a content type to each video (Music Video, Audio Only, Lyric Video, Visualizer, etc.) via a per-row dropdown. Auto-assigned on import; curator-correctable at any time.
+- **Content type tagging** — assign a content type to each video via a per-row dropdown. Auto-assigned on import; correctable at any time.
 - **Channel categorization** — via the admin panel, assign categories to uncategorized channels
 
 ### Content Types
@@ -91,13 +102,16 @@ Running `python server.py` instead of the plain HTTP server enables write-back f
 
 | File | Purpose |
 |------|---------|
-| `index.html` | Single-page app (CSS + JS inline) |
+| `index.html` | Single-page app |
+| `watchlog.css` | All visual styling and theme definitions |
+| `watchlog.js` | App logic |
 | `player.html` | YouTube IFrame player with queue |
 | `admin.html` | MusicBrainz channel enrichment tool |
 | `preprocess.py` | Takeout → flat files |
 | `build_watchlog_db.py` | Flat files + MB lookup → `watchlog.db` |
 | `build_wl_db.py` | `watchlog.db` + sources → `wl.db` |
 | `build_data_json.py` | `wl.db` → `data.json` + `admin_data.json` |
+| `build_demo_json.py` | Generates the GitHub Pages demo dataset |
 | `server.py` | Flask local server with editing REST API |
 
 ---
